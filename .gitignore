@@ -4,3 +4,6 @@
 .Ruserdata
 rscripts/_old
 output/
+plots/Plot_correlation_urban_variables_grid.png
+plots/
+spectral_analysis/
