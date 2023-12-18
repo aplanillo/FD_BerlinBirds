@@ -1,0 +1,48 @@
+---
+title: "extract_covariates"
+author: "Aimara Planillo"
+date: "2023-12-18"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Extract environmental covariates
+
+
+```{r}
+library(terra)
+library(sf)
+```
+
+### Load data
+
+
+```{r}
+## bird data
+birds_grid <- read_sf("./data/berlin_grid1x1km_3035.gpkg")
+
+
+## load spectral analysis data
+glcm_rast <- rast("./spectral_analysis/geo_proc/RE_pca_ndvi_glcm.tif")
+raster_names <- read.csv("./spectral_analysis/geo_proc/RE_pca_ndvi_glcm_names.csv")
+raster_names
+
+names(glcm_rast) <- raster_names$names
+glcm_rast
+```
+
+
+```{r}
+plot(glcm_rast$glcm_homogeneity, colNA = "black")
+plot(birds_grid, add = TRUE, border = "red", col = "transparent")
+
+veg_quad <- extract(glcm_rast, birds_grid, fun = mean, na.rm = TRUE)
+
+allenv_quadrants <- cbind(env_quadrants, veg_quad)
+```
+
