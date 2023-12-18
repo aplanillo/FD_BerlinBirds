@@ -1,0 +1,120 @@
+---
+title: "data_preparation"
+author: "Aimara Planillo"
+date: "18/05/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preparing bird trait data for the Analysis of functional diversity
+
+
+
+
+```{r prepare workspace}
+source("./rscripts/source_packages.R")
+```
+
+```{r load data}
+## bird abundances per transect
+grid_birdabund <- read.csv("./data/grid_birds_abundance.csv")
+
+## bird traits
+birds_traits <- read.csv("./data/birds_all_traits.csv")
+head(birds_traits)
+
+## explanatory variables for bird transects at grid and territory scales
+covariates_grid <- st_read("./data/grid_covariates_3035.gpkg")
+head(covariates_grid)
+
+
+
+
+
+  
+
+birds_territories <- 
+
+
+```
+
+## Check variable correlations
+```{r cor grid scale}
+colnames(covariates_grid)
+
+## make data frame
+covariates_grid_df <- st_drop_geometry(covariates_grid)
+
+## get urbanization variables
+grid_urb <- covariates_grid_df %>% 
+  dplyr::select(imperv, pop_den, tcd, light, noise)  
+  
+## get vegetation structure variables
+grid_veg <- covariates_grid_df %>% 
+  dplyr::select(veg_pca1, veg_pca2, glcm = glcm_mean, glcm_hmg = glcm_homogeneity)  
+
+
+cor_grid_urb <- cor(grid_urb)
+cor_grid_veg <- cor(grid_veg)
+
+## Plotting
+## Urban
+ggcorrplot(cor_grid_urb, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_urban_variables_grid.png",
+       dpi = 600, height = 6, width = 6)
+
+## Vegetation structure
+ggcorrplot(cor_grid_veg, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_veg_variables_grid.png",
+       dpi = 600, height = 6, width = 6)
+```
+
+```{r cor territory scale}
+colnames(envir_terr)
+
+## get urbanization variables
+varcor_terr_urb <- envir_terr %>% 
+  dplyr::select(imperv = imperv_std, pop_dens = pop_dens_std, tree_cover = tcd_std, 
+                light = light_pol_std, noise = noise_std)  
+  
+## get vegetation structure variables
+varcor_terr_veg <- envir_terr %>%
+  dplyr::select(pca_b1 = pca_b1_std, pca_b2 = pca_b2_std, ndvi = ndvi_std, 
+                glcm = glcm_std, glcm_hmg = glcm_homogeneity_std)  
+
+
+cor_table_terrurb <- cor(varcor_terr_urb)
+cor_table_terrveg <- cor(varcor_terr_veg)
+
+## Plotting
+## Urban
+ggcorrplot(cor_table_terrurb, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_urban_variables_territory.png",
+       dpi = 600, height = 6, width = 6)
+
+## Vegetation structure
+ggcorrplot(cor_table_terrveg, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_veg_variables_terrotory.png",
+       dpi = 600, height = 6, width = 6)
+```
+
+
+
+
