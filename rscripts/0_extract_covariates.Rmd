@@ -157,7 +157,7 @@ nrow(data_final)
 
 plot(st_geometry(data_final))
 
-# st_write(data_final, "./data/territories_centroids_AP_3035.gpkg")
+# st_write(data_final, "./data/territories_centroids_3035.gpkg")
 ```
 
 ### extract environmental covariates 
