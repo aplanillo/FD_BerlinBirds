@@ -20,8 +20,16 @@ source("./rscripts/source_packages.R")
 
 ### Load data
 ```{r}
-## bird data
-birds_grid <- read_sf("./data/berlin_grid1x1km_3035.gpkg")
+## bird grid data
+birds_grid <- st_read("./data/berlin_grid1x1km_3035.gpkg")
+
+### load bird locations
+birds_locations <- st_read("./data/bird_territories_3035.gpkg")
+head(birds_locations)
+length(unique(birds_locations$sp_name)) # 97 number of species
+length(unique(birds_locations$transect)) # 30 number of transects
+length(unique(birds_locations$unique_ter_id)) # 7151 number of territories
+
 
 ## berlin border to plot
 berlin <- read_sf("./data/geodata/Berlin_border_3035.gpkg", crs =3035)
@@ -35,7 +43,7 @@ ggplot(data = berlin) +
 ## environmental layers
 # impervious surface 
 imperv <-rast("./data/geodata/IMD_cropped_Berlin.tif")
-# imperv
+imperv
 # plot(imperv)
 
 # human population density
@@ -62,7 +70,7 @@ glcm_rast
 
 set all variables to the same extent
 ```{r}
-ext(imperv) <- ext(pop_den)
+imperv <- project(imperv, pop_den)
 
 urban_variables <- c(imperv, pop_den, tcd, light, noise)
 names(urban_variables) <- c("imperv", "pop_den", "tcd", "light", "noise")
@@ -109,68 +117,33 @@ grid_variables <- birds_grid_var %>%
 ```
 
 
+## extract environmental variables territory scale
 
-
-
-
-
-
-
-
-## Territory scale
-
-### load bird locations
+### get territories
+remove incomplete data and get a table with the centroids
 ```{r}
-bird_data_locations <- st_read("./data_proc/geo_proc/all_territories_3035.gpkg")
-bird_data_locations
-nrow(bird_data_locations)
-```
-
-### explore location data
-```{r}
-length(unique(bird_data_locations$Art2)) # number of species
-# [1] 97
-length(unique(bird_data_locations$Transect)) # number of transects
-# [1] 30
-length(unique(bird_data_locations$Scientific_name2))
-# [1] 97
-length(unique(bird_data_locations$Species2))
-# [1] 97
-
-length(unique(bird_data_locations$unique_ter_id)) # number of territories
-# [1] 7151
-
-plot(bird_data_locations)
-```
-
-
-## remove incomplete data and get a table with the centroids
-```{r}
-data_centroids <- bird_data_locations %>% 
-  filter(Transect != "BE1") %>%  ## we remove transect 1 because it was incomplete
-  filter(!Scientific_name2 %in% c("Apus apus", "Passer domesticus")) %>% # these species do not have reliable data
+data_centroids <- birds_locations %>% 
+  filter(transect != "be1") %>%  ## we remove transect 1 because it was incomplete
+  filter(!sp_name %in% c("Apus apus", "Passer domesticus")) %>% # these species do not have reliable data
   group_by(unique_ter_id) %>% 
   summarise() %>%
   st_centroid()
-nrow(data_centroids)
+nrow(data_centroids) # total number of territories after filtering
 # [1] 6515
 ```
 
-
+add centroids to data
 ```{r}
-# get bird data in data frame format
-data_set_table <- bird_data_locations %>% 
-  st_drop_geometry()
-
 ## add info of the territories to the centroids
-data_terr_tojoin <- data_set_table %>% 
-  filter(Transect != "BE1") %>%  # transect 1 is incomplete
-  filter(!Scientific_name2 %in% c("Apus apus", "Passer domesticus")) %>% # these species do not have reliable data
+data_terr_tojoin <- birds_locations %>% 
+  st_drop_geometry() %>% 
+  filter(transect != "be1") %>%  ## we remove transect 1 because it was incomplete
+  filter(!sp_name %in% c("Apus apus", "Passer domesticus")) %>% # these species do not have reliable data
   group_by(unique_ter_id) %>% 
-  summarise(Type = unique(Type), 
-            Type_num = unique(Type_num), 
-            N_birds = mean(N_birds, na.rm = TRUE), 
-            Scientific_name2 = unique(Scientific_name2), 
+  summarise(transect = unique(transect), 
+            nvisits = n(), 
+            sp_name = unique(sp_name), 
+            sp_english = unique(sp_english),
             sp_code = unique(sp_code))
 
 nrow(data_terr_tojoin)
@@ -184,291 +157,29 @@ nrow(data_final)
 
 plot(st_geometry(data_final))
 
-# st_write(data_final, "./data_proc/geo_proc/territories_centroids_AP_3035.gpkg", 
-#          append = FALSE)
-# data_final <- st_read("./data_proc/geo_proc/territories_centroids_AP_3035.gpkg")
+# st_write(data_final, "./data/territories_centroids_AP_3035.gpkg")
 ```
 
-```{r visualize territories}
+### extract environmental covariates 
+```{r}
+mean_veg_territories <- terra::extract(veg_variables, data_final, fun = mean, na.rm = TRUE)
+mean_urban_territoreis <- terra::extract(urban_variables, data_final, fun = mean, na.rm = TRUE)
+
+birds_terr_var <- cbind(data_final, mean_urban_territoreis, mean_veg_territories) %>% 
+  dplyr::select(-ID, -ID.1)
+
+summary(birds_terr_var)
 
 tmap_mode("view")
+tm_shape(urban_variables) +
+  tm_raster("imperv") +
+  tm_shape(birds_terr_var) +
+  tm_polygons("imperv", alpha = 0.5, border.col = "black")
 
-tm_shape(bird_data_locations) +
-  tm_dots("Transect") +
-  tm_shape(data_final) +
-  tm_dots("Type_num")
+terr_variables <- birds_terr_var %>% 
+  st_drop_geometry()
+
+# write.csv(terr_variables, "./data/territories_environmental_variables.csv", row.names = FALSE)
 ```
 
-
-```{r}
-# territory centroids 
-# terr_centroids <- st_read("./data_proc/geo_proc/territories_centroids_AP_3035.gpkg")
-```
-
-
-### vegetation structure data
-```{r}
-##load data vegetation data 
-pca_ndvi_glcm <- stack("./data_proc/geo_proc/RE_pca_ndvi_glcm.tif")
-names(pca_ndvi_glcm)
-
-veg_territories <- raster::extract(pca_ndvi_glcm, data_final, fun = mean, na.rm = TRUE, sp = TRUE)
-veg_territories
-
-# as simple feature object
-veg_territories_sf <-st_as_sf(veg_territories) %>%
-  dplyr::select(unique_ter_id,N_birds, Scientific_name2,PC1, PC2, ndvi, glcm_mean, glcm_homogeneity)
-plot(veg_territories_sf)
-summary(veg_territories_sf)
-# st_write(veg_territories_sf, paste0(geoproc_wd,  "/veg_territories_AP_3035.gpkg"))
-```
-
-
-###impervious surface
-```{r}
-imperv <-raster(paste0(georaw_wd, "/IMD_cropped_Berlin.tif"))
-mean_imperv_terr <- raster::extract(imperv, veg_territories, fun = mean, na.rm = TRUE, sp = TRUE) 
-head(mean_imperv_terr)
-    st_as_sf() %>%
-  dplyr::select(unique_ter_id, mean_imperv_terr =IMD_cropped_Berlin)
-
-```
-
-#load human population density
-pop_dens <-raster(paste0(rawdata_dir,"/geodata/geodata_true/geodata/population_density_berlin_100m_3035.tif"))
-mean_pop_dens_terr <- raster::extract(pop_dens, veg_territories, fun = mean, na.rm = TRUE, sp = TRUE) %>%
-  st_as_sf() %>%
-  dplyr::select(unique_ter_id, mean_pop_dens_terr =population_density_berlin_100m_3035)
-#load light pollution  
-light_pol<- raster(paste0(rawdata_dir,"/geodata/geodata_true/geodata/light_pollution_raster_10m_2017_3035.tif"))
-mean_light_pol_terr <- raster::extract(light_pol, veg_territories, fun = mean, na.rm = TRUE, sp = TRUE) %>%
-  st_as_sf() %>%
-  dplyr::select(unique_ter_id, mean_light_pol_terr =light_pollution_raster_10m_2017_3035)
-#load noise berlin
-noise_berlin<- raster(paste0(rawdata_dir, "/geodata/geodata_true/geodata/noise_berlin_raster_10m_2017_3035.tif"))
-mean_noise_terr <- raster::extract(noise_berlin, veg_territories, fun = mean, na.rm = TRUE, sp = TRUE) %>%
-  st_as_sf() %>%
-  dplyr::select(unique_ter_id, mean_noise_terr =noise_berlin_raster_10m_2017_3035)
-#load TCD
-tree_cover_density<- raster(paste0(rawdata_dir, "/geodata/geodata_true/geodata/tree_cover_density_raster_10m_2018_3035.tif"))
-mean_tcd_terr <- raster::extract(tree_cover_density, veg_territories, fun = mean, na.rm = TRUE, sp = TRUE) %>%
-  st_as_sf() %>%
-  dplyr::select(unique_ter_id, mean_tcd_terr =tree_cover_density_raster_10m_2018_3035)
-
-env_terr1 <-st_join(mean_imperv_terr, mean_pop_dens_terr, by = "unique_ter_id") %>%
-  mutate(unique_ter_id = unique_ter_id.x) %>%
-  dplyr::select(unique_ter_id, mean_imperv_terr, mean_pop_dens_terr)
-
-env_terr2<- st_join(env_terr1, mean_tcd_terr, by = "unique_ter_id") %>%
-  mutate(unique_ter_id = unique_ter_id.x) %>%
-  dplyr::select(unique_ter_id, mean_imperv_terr, mean_pop_dens_terr, mean_tcd_terr ) 
-
-#en_quadrants3<- st_join(env_quadrants2, green_areas_berlin_quadrants, by = "routcode") %>%
-# mutate(routcode = routcode.x) %>%
-#dplyr::select(routcode, mean_imperv, sd_imperv, mean_pop_dens, sd_pop_dens, mean_tree_cover_density, sd_tree_cover_density, mean_green_areas, sd_green_areas) 
-
-env_terr3<- st_join(env_terr2, mean_light_pol_terr, by = "unique_ter_id") %>%
-  mutate(unique_ter_id = unique_ter_id.x) %>%
-  dplyr::select(unique_ter_id, mean_imperv_terr, mean_pop_dens_terr, mean_tcd_terr, mean_light_pol_terr)
-
-env_territories<-st_join(env_terr3, mean_noise_terr, by = "unique_ter_id") %>%
-  mutate(unique_ter_id = unique_ter_id.x) %>%
-  dplyr::select(unique_ter_id, mean_imperv_terr, mean_pop_dens_terr, mean_tcd_terr, mean_light_pol_terr, mean_noise_terr)
-
-
-st_write(env_territories, paste0(workdir, "/4_data_processed/environmental_territories_ES.gpkg"), append = FALSE, overwrite = TRUE)
-
-env_territories_df <- as.data.frame(env_territories) %>% 
-  dplyr::select(-geometry)
-glimpse(env_territories_df)
-write.csv(env_territories_df, paste0(workdir, "/4_data_processed/environmental_territories_ES.csv"), row.names = FALSE)
-env_territories_df<- read.csv(paste0(workdir, "/4_data_processed/environmental_territories_ES.csv"))
-str(env_territories_df)
-###
-# as numeric  
-env_territories_df$mean_imperv_terr <- as.numeric(env_territories_df$mean_imperv_terr)
-env_territories_df$mean_pop_dens_terr<-as.numeric(env_territories_df$mean_pop_dens_terr)
-env_territories_df$mean_tcd_terr<- as.numeric(env_territories_df$mean_tcd_terr)
-env_territories_df$mean_light_pol_terr<- as.numeric(env_territories_df$mean_light_pol_terr)
-env_territories_df$mean_noise_terr<-as.numeric(env_territories_df$mean_noise_terr)
-
-###Join tables
-env_data_terr <- env_territories_df %>% 
-  left_join(veg_territories_sf %>%
-              st_drop_geometry(), 
-            by = "unique_ter_id")
-
-
-Terr_routcode<-env_data_terr%>%
-  mutate(routcode = case_when(
-    startsWith(unique_ter_id, "BE10") ~ "BE10",
-startsWith(unique_ter_id, "BE11") ~ "BE11",
-  startsWith(unique_ter_id, "BE12") ~ "BE12",
-  startsWith(unique_ter_id, "BE13") ~ "BE13",
-  startsWith(unique_ter_id, "BE14") ~ "BE14",
-  startsWith(unique_ter_id, "BE15") ~ "BE15",
-  startsWith(unique_ter_id, "BE16") ~ "BE16",
-startsWith(unique_ter_id, "BE17") ~ "BE17",
-  startsWith(unique_ter_id, "BE18") ~ "BE18",
-  startsWith(unique_ter_id, "BE19") ~ "BE19",
-  startsWith(unique_ter_id, "BE20") ~ "BE20",
-  startsWith(unique_ter_id, "BE21") ~ "BE21",
-  startsWith(unique_ter_id, "BE22") ~ "BE22",
-  startsWith(unique_ter_id, "BE23") ~ "BE23",
-  startsWith(unique_ter_id, "BE24") ~ "BE24",
-  startsWith(unique_ter_id, "BE25") ~ "BE25",
-  startsWith(unique_ter_id, "BE26") ~ "BE26",
-  startsWith(unique_ter_id, "BE27") ~ "BE27",
-  startsWith(unique_ter_id, "BE28") ~ "BE28",
-  startsWith(unique_ter_id, "BE29") ~ "BE29",
-  startsWith(unique_ter_id, "BE30") ~ "BE30",
-  startsWith(unique_ter_id, "BE2") ~ "BE2",
-  startsWith(unique_ter_id, "BE3") ~ "BE3",
-  startsWith(unique_ter_id, "BE4") ~ "BE4",
-  startsWith(unique_ter_id, "BE5") ~ "BE5",
-  startsWith(unique_ter_id, "BE6") ~ "BE6",
-  startsWith(unique_ter_id, "BE7") ~ "BE7",
-  startsWith(unique_ter_id, "BE8") ~ "BE8",
-  startsWith(unique_ter_id, "BE9") ~ "BE9"))
-   
-str(Terr_routcode)
-terr_mean_values<-Terr_routcode %>% 
-  group_by(routcode) %>% 
-  summarise(
-    n = n(),
-    mean_imperv = mean(mean_imperv_terr,  na.rm = TRUE),
-    mean_pop_dens = mean(mean_pop_dens_terr, na.rm = TRUE),
-    mean_tcd = mean(mean_tcd_terr, na.rm = TRUE),
-    mean_light_pol = mean(mean_light_pol_terr, na.rm = TRUE),
-    mean_noise = mean(mean_noise_terr, na.rm = TRUE),
-    mean_pca_b1 = mean(PC1, na.rm = TRUE),
-    mean_pca_b2 = mean(PC2, na.rm = TRUE),
-    mean_glcm = mean(glcm_mean, na.rm = TRUE), 
-    mean_ndvi = mean(ndvi, na.rm = TRUE),
-    mean_glcm_homogeneity = mean(glcm_homogeneity, na.rm = TRUE))%>%
-  dplyr:: select(-n)
-str(terr_mean_values)
-
-terr_mean_values <- terr_mean_values%>%
-  mutate(imperv_std = scale(mean_imperv),
-         pop_dens_std =scale(mean_pop_dens),
-         tcd_std = scale(mean_tcd),
-         light_pol_std = scale(mean_light_pol),
-         noise_std = scale(mean_noise),
-         pca_b1_std = scale(mean_pca_b1), 
-         pca_b2_std = scale(mean_pca_b2), 
-         ndvi_std = scale(mean_ndvi), 
-         glcm_std = scale(mean_glcm),
-         glcm_homogeneity_std = scale(mean_glcm_homogeneity))%>%
-  dplyr::select(routcode,imperv_std, pop_dens_std,tcd_std, light_pol_std, noise_std,pca_b1_std, pca_b2_std, ndvi_std, glcm_std, glcm_homogeneity_std)
-str(terr_mean_values)
-summary(terr_mean_values)
-write.csv(terr_mean_values, paste0(workdir, "/4_data_processed/territories_mean_env_values_corrected.csv"), row.names = FALSE)
-terr_mean_values <- read.csv(paste0(workdir, "/4_data_processed/territories_mean_env_values_corrected.csv"))
-
-
-
-summary<(env_data_terr)
-write.csv(env_data_terr, paste0(workdir, "/4_data_processed/alldata_territories.csv"), row.names = FALSE)
-env_data_terr <- read.csv(paste0(workdir, "/4_data_processed/alldata_territories.csv"))
-
-####################################
-
-# Variable correlations
-
-```{r load data}
-## grid scale
-allenv_quadrants <- st_read("./data_proc/geo_proc/envir_veg_quadrants_3035.gpkg")
-
-
-head(allenv_quadrants)
-head(envir_terr)
-```
-
-## monitoring grid scale (quadrant)
-
-```{r get correlations}
-colnames(allenv_quadrants)
-
-## get urbanization variables
-varcor_urb <- allenv_quadrants %>% 
-  dplyr::select(imperv = mean_imperv_std, pop_dens = mean_pop_dens_std, tree_cover = mean_tree_cover_density_std, 
-                light = mean_light_pol_std, noise = mean_noise_std)  
-  
-## get vegetation structure variables
-varcor_veg <- environment %>% 
-  dplyr::select(pca_b1 = pca_b1_std, pca_b2 = pca_b2_std, glcm = glcm_std, glcm_hmg = glcm_homogeneity_std)  
-
-
-cor_table_urb <- cor(varcor_urb)
-cor_table_veg <- cor(varcor_veg)
-```
-
-```{r plot correlations}
-## Urban
-ggcorrplot(cor_table_urb, hc.order = FALSE, type = "lower",
-           lab = TRUE, outline.color = "white", 
-           lab_size = 6, tl.cex = 18)
-
-ggsave(filename = "./plots/Plot_correlation_urban_variables_quadrant.png",
-       dpi = 600, height = 6, width = 6)
-
-## Vegetation structure
-ggcorrplot(cor_table_veg, hc.order = FALSE, type = "lower",
-           lab = TRUE, outline.color = "white", 
-           lab_size = 6, tl.cex = 18)
-
-ggsave(filename = "./plots/Plot_correlation_veg_variables_quadrant.png",
-       dpi = 600, height = 6, width = 6)
-```
-
-## territory scale 
-
-```{r variable summary}
-mean_terr <- envir_terr %>% 
-  summarise(across(where(is.numeric), ~ mean(.x)))
-               
-sd_terr <- envir_terr %>% 
-  summarise(across(where(is.numeric), ~ sd(.x)))
-  
-
-```
-
-
-
-```{r get correlations}
-colnames(envir_terr)
-
-## get urbanization variables
-varcor_terr_urb <- envir_terr %>% 
-  dplyr::select(imperv = imperv_std, pop_dens = pop_dens_std, tree_cover = tcd_std, 
-                light = light_pol_std, noise = noise_std)  
-  
-## get vegetation structure variables
-varcor_terr_veg <- envir_terr %>%
-  dplyr::select(pca_b1 = pca_b1_std, pca_b2 = pca_b2_std, ndvi = ndvi_std, 
-                glcm = glcm_std, glcm_hmg = glcm_homogeneity_std)  
-
-
-cor_table_terrurb <- cor(varcor_terr_urb)
-cor_table_terrveg <- cor(varcor_terr_veg)
-```
-
-```{r plot correlations}
-## Urban
-ggcorrplot(cor_table_terrurb, hc.order = FALSE, type = "lower",
-           lab = TRUE, outline.color = "white", 
-           lab_size = 6, tl.cex = 18)
-
-ggsave(filename = "./plots/Plot_correlation_urban_variables_territory.png",
-       dpi = 600, height = 6, width = 6)
-
-## Vegetation structure
-ggcorrplot(cor_table_terrveg, hc.order = FALSE, type = "lower",
-           lab = TRUE, outline.color = "white", 
-           lab_size = 6, tl.cex = 18)
-
-ggsave(filename = "./plots/Plot_correlation_veg_variables_terrotory.png",
-       dpi = 600, height = 6, width = 6)
-```
 
