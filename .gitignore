@@ -8,3 +8,5 @@ plots/Plot_correlation_urban_variables_grid.png
 plots/
 spectral_analysis/
 data/geodata/
+_old/grid_birds_abundance.csv
+_old/
