@@ -1,0 +1,331 @@
+---
+title: "data_preparation"
+author: "Aimara Planillo"
+date: "18/05/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preparing bird data for the Analysis of functional diversity
+
+```{r prepare workspace}
+source("./rscripts/source_packages.R")
+```
+
+# Extract covariates
+
+### Load data
+```{r}
+## bird grid data
+birds_grid <- st_read("./data/berlin_grid1x1km_3035.gpkg")
+
+### load bird locations
+birds_locations <- st_read("./data/bird_territories_3035.gpkg")
+head(birds_locations)
+length(unique(birds_locations$sp_name)) # 97 number of species
+length(unique(birds_locations$transect)) # 30 number of transects
+length(unique(birds_locations$unique_ter_id)) # 7151 number of territories
+
+
+## berlin border to plot
+berlin <- read_sf("./data/geodata/Berlin_border_3035.gpkg", crs =3035)
+plot(st_geometry(berlin))
+plot(st_geometry(birds_grid), add = TRUE, border = "blue")
+
+ggplot(data = berlin) + 
+  geom_sf(fill = "antiquewhite") +
+  geom_sf(data = birds_grid, fill = "blue")
+
+## environmental layers
+# impervious surface 
+imperv <-rast("./data/geodata/IMD_cropped_Berlin.tif")
+imperv
+# plot(imperv)
+
+# human population density
+pop_den <- rast("./data/geodata/human_population_density_raster_10m_2017_3035.tif")
+
+# tree cover
+tcd <- rast("./data/geodata/tree_cover_density_raster_10m_2018_3035.tif")
+
+# light polution
+light <- rast("./data/geodata/light_pollution_raster_10m_2017_3035.tif")
+
+# noise
+noise <- rast("./data/geodata/noise_berlin_raster_10m_2017_3035.tif")
+
+## spectral analysis data
+glcm_rast <- rast("./data/geodata/RE_pca_ndvi_glcm.tif")
+raster_names <- read.csv("./data/geodata/RE_pca_ndvi_glcm_names.csv")
+names(glcm_rast) <- raster_names$names
+glcm_rast
+```
+
+
+### Stack all enviromental rasters
+
+set all variables to the same extent
+```{r}
+imperv <- project(imperv, pop_den)
+
+urban_variables <- c(imperv, pop_den, tcd, light, noise)
+names(urban_variables) <- c("imperv", "pop_den", "tcd", "light", "noise")
+
+veg_variables <- c(glcm_rast$PC1, glcm_rast$PC2, glcm_rast$ndvi, glcm_rast$glcm_mean, glcm_rast$glcm_homogeneity)
+names(veg_variables) <- c("veg_pca1", "veg_pca2", "ndvi", "glcm", "glcm_hmg")
+
+```
+
+
+```{r}
+plot(veg_variables$glcm_homogeneity, colNA = "black")
+
+plot(glcm_rast$glcm_homogeneity, colNA = "black")
+plot(birds_grid, add = TRUE, border = "red", col = "transparent")
+
+allenv_quadrants <- cbind(env_quadrants, veg_quad)
+```
+
+## extract environmental variables grid scale
+
+```{r}
+mean_urban_grid <- terra::extract(urban_variables, birds_grid, fun = mean, na.rm = TRUE)
+head(mean_urban_grid)
+
+mean_veg_grid <- terra::extract(veg_variables, birds_grid, fun = mean, na.rm = TRUE)
+head(mean_veg_grid)
+
+birds_grid_var <- cbind(birds_grid, mean_urban_grid, mean_veg_grid) %>% 
+  dplyr::select(-ID, -ID.1)
+
+summary(birds_grid_var)
+
+tmap_mode("view")
+tm_shape(urban_variables) +
+  tm_raster("imperv") +
+  tm_shape(birds_grid_var) +
+  tm_polygons("imperv", alpha = 0.5, border.col = "black")
+
+grid_variables <- birds_grid_var %>% 
+  st_drop_geometry()
+
+# write.csv(grid_variables, "./data/grids_environmental_variables.csv", row.names = FALSE)
+```
+
+
+## extract environmental variables territory scale
+
+### get territories
+remove incomplete data and get a table with the centroids
+```{r}
+data_centroids <- birds_locations %>% 
+  filter(transect != "be1") %>%  ## we remove transect 1 because it was incomplete
+  filter(!sp_name %in% c("Apus apus", "Passer domesticus")) %>% # these species do not have reliable data
+  group_by(unique_ter_id) %>% 
+  summarise() %>%
+  st_centroid()
+nrow(data_centroids) # total number of territories after filtering
+# [1] 6515
+```
+
+add centroids to data
+```{r}
+## add info of the territories to the centroids
+data_terr_tojoin <- birds_locations %>% 
+  st_drop_geometry() %>% 
+  filter(transect != "be1") %>%  ## we remove transect 1 because it was incomplete
+  filter(!sp_name %in% c("Apus apus", "Passer domesticus")) %>% # these species do not have reliable data
+  group_by(unique_ter_id) %>% 
+  summarise(transect = unique(transect), 
+            nvisits = n(), 
+            sp_name = unique(sp_name), 
+            sp_english = unique(sp_english),
+            sp_code = unique(sp_code))
+
+nrow(data_terr_tojoin)
+# [1] 6515
+
+data_final <- data_centroids %>% 
+  left_join(data_terr_tojoin, by = "unique_ter_id")
+
+data_final
+nrow(data_final)
+
+plot(st_geometry(data_final))
+
+# st_write(data_final, "./data/territories_centroids_3035.gpkg")
+```
+
+### extract environmental covariates 
+```{r}
+mean_veg_territories <- terra::extract(veg_variables, data_final, fun = mean, na.rm = TRUE)
+mean_urban_territoreis <- terra::extract(urban_variables, data_final, fun = mean, na.rm = TRUE)
+
+birds_terr_var <- cbind(data_final, mean_urban_territoreis, mean_veg_territories) %>% 
+  dplyr::select(-ID, -ID.1)
+
+summary(birds_terr_var)
+
+tmap_mode("view")
+tm_shape(urban_variables) +
+  tm_raster("imperv") +
+  tm_shape(birds_terr_var) +
+  tm_polygons("imperv", alpha = 0.5, border.col = "black")
+
+terr_variables <- birds_terr_var %>% 
+  st_drop_geometry()
+
+# write.csv(terr_variables, "./data/territories_environmental_variables.csv", row.names = FALSE)
+```
+
+# Explore data
+
+```{r load data}
+# territory bird data
+birds_locations <- st_read("./data/bird_territories_3035.gpkg")
+
+## remove extra sp
+birds_points <- birds_locations %>% 
+  filter(transect != "be1") %>%  ## we remove transect 1 because it was incomplete
+  filter(!sp_name %in% c("Apus apus", "Passer domesticus"))  # these species do not have reliable data
+
+# grid bird data
+grid_birdabund <- read.csv("./data/grid_birds_abundance_corrected.csv") %>% 
+  rename(transect = X) %>% 
+  mutate(transect = tolower(transect))
+
+## explanatory variables for bird transects at grid and territory scales
+covariates_grid <- read.csv("data/grids_environmental_variables.csv")
+head(covariates_grid)
+
+## explanatory variables at territory territory scales
+covariates_terr <- read.csv("./data/territories_environmental_variables.csv")
+head(covariates_terr)
+
+# trait values
+traits_birds <- read.csv("./data/birds_all_traits.csv") 
+head(traits_birds)
+traits_birds <- traits_birds %>% 
+  arrange(species) %>% 
+  filter(!species %in% c("Apus apus", "Passer domesticus")) %>% 
+  mutate(migrant_num = as.numeric(migrant_num),
+         diet_cat = as.factor(diet_cat))%>%
+  dplyr::select(-sp_synonym, -migrant_cat)
+```
+
+
+## Check territory numbers match
+
+```{r n territories per sp}
+n_terr <- birds_points %>% 
+  st_drop_geometry() %>% 
+  ungroup() %>% 
+  group_by(transect, unique_ter_id) %>% 
+  summarise(npoints = n()) %>% 
+  group_by(transect) %>% 
+  summarise(nterr = n())
+
+
+nterr_grid <- grid_birdabund %>% 
+  mutate(nterr = rowSums(across(where(is.numeric)))) %>% 
+  dplyr::select(transect, nterr)
+
+cbind.data.frame(n_terr, nterr_grid)
+```
+
+## get bird territory size
+To extract size, we need polygons, thus we select the territories with at least three points for this
+
+```{r load data}
+terr_size_tmp <- birds_points %>% 
+  group_by(transect, unique_ter_id) %>% 
+  mutate(npoints = n()) %>% 
+  filter(npoints > 2) %>% 
+  ungroup()
+
+terr_size <- terr_size_tmp %>% 
+  group_by(transect, sp_name, unique_ter_id) %>% 
+  summarise(geom = st_combine(geom)) %>% 
+  st_cast("POLYGON")
+   
+terr_size$area_m <- as.numeric(st_area(terr_size))
+
+terr_size %>% 
+  filter(area_m > 1000)
+
+## mean value
+mean_area <- mean(terr_size$area_m, na.rm = TRUE) # 940.35 m2
+sd_area <- sd(terr_size$area_m, na.rm = TRUE) # 2956.72 m2
+```
+
+## Check variable correlations
+```{r cor grid scale}
+## get urbanization variables
+grid_urb <- covariates_grid %>% 
+  dplyr::select(imperv, pop_den, tcd, light, noise)  
+  
+## get vegetation structure variables
+grid_veg <- covariates_grid %>% 
+  dplyr::select(veg_pca1, veg_pca2, glcm, glcm_hmg)  
+
+
+cor_grid_urb <- cor(grid_urb)
+cor_grid_veg <- cor(grid_veg)
+
+## Plotting
+## Urban
+ggcorrplot(cor_grid_urb, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_urban_variables_grid.png",
+       dpi = 600, height = 6, width = 6)
+
+## Vegetation structure
+ggcorrplot(cor_grid_veg, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_veg_variables_grid.png",
+       dpi = 600, height = 6, width = 6)
+```
+
+```{r cor territory scale}
+colnames(envir_terr)
+
+## get urbanization variables
+varcor_terr_urb <- covariates_terr %>% 
+  dplyr::select(imperv, pop_den, tcd, light, noise)  
+  
+## get vegetation structure variables
+varcor_terr_veg <- covariates_terr %>%
+  dplyr::select(veg_pca1, veg_pca2, ndvi, glcm, glcm_hmg)  
+
+cor_table_terrurb <- cor(varcor_terr_urb, use = "pairwise.complete.obs")
+cor_table_terrveg <- cor(varcor_terr_veg, use = "pairwise.complete.obs")
+
+## Plotting
+## Urban
+ggcorrplot(cor_table_terrurb, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_urban_variables_territory.png",
+       dpi = 600, height = 6, width = 6)
+
+## Vegetation structure
+ggcorrplot(cor_table_terrveg, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_veg_variables_terrotory.png",
+       dpi = 600, height = 6, width = 6)
+```
+
+
+
