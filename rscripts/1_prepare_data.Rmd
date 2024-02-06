@@ -66,38 +66,45 @@ names(glcm_rast) <- raster_names$names
 glcm_rast
 ```
 
-
-### Stack all enviromental rasters
+### make all rasters 100 m resolution and stack them
 
 set all variables to the same extent
 ```{r}
 imperv <- project(imperv, pop_den)
 
-urban_variables <- c(imperv, pop_den, tcd, light, noise)
-names(urban_variables) <- c("imperv", "pop_den", "tcd", "light", "noise")
+## we do population density separately to obtain human/ha values
+urban_tmp <- c(imperv, tcd, light, noise)
+names(urban_tmp) <- c("imperv", "tcd", "light", "noise")
 
+urban_tmp_100m <- terra::aggregate(urban_tmp, fact = 10, fun = mean, na.rm = TRUE)
+popden_100m <- terra::aggregate(pop_den, fact = 10, fun = sum, na.rm = TRUE)
+names(popden_100m) <- "pop_den"
+
+urban_variables_100m <- c(popden_100m, urban_tmp_100m)
+
+## vegetation structure variables
 veg_variables <- c(glcm_rast$PC1, glcm_rast$PC2, glcm_rast$ndvi, glcm_rast$glcm_mean, glcm_rast$glcm_homogeneity)
 names(veg_variables) <- c("veg_pca1", "veg_pca2", "ndvi", "glcm", "glcm_hmg")
 
+veg_variables_100m <- terra::aggregate(veg_variables, fact = 20, fun = mean, na.rm = TRUE)
+veg_variables_100m
 ```
 
 
 ```{r}
-plot(veg_variables$glcm_homogeneity, colNA = "black")
+plot(veg_variables_100m$glcm_hmg, colNA = "black")
 
 plot(glcm_rast$glcm_homogeneity, colNA = "black")
 plot(birds_grid, add = TRUE, border = "red", col = "transparent")
-
-allenv_quadrants <- cbind(env_quadrants, veg_quad)
 ```
 
 ## extract environmental variables grid scale
 
 ```{r}
-mean_urban_grid <- terra::extract(urban_variables, birds_grid, fun = mean, na.rm = TRUE)
+mean_urban_grid <- terra::extract(urban_variables_100m, birds_grid, fun = mean, na.rm = TRUE)
 head(mean_urban_grid)
 
-mean_veg_grid <- terra::extract(veg_variables, birds_grid, fun = mean, na.rm = TRUE)
+mean_veg_grid <- terra::extract(veg_variables_100m, birds_grid, fun = mean, na.rm = TRUE)
 head(mean_veg_grid)
 
 birds_grid_var <- cbind(birds_grid, mean_urban_grid, mean_veg_grid) %>% 
@@ -118,7 +125,7 @@ grid_variables <- birds_grid_var %>%
 ```
 
 
-## extract environmental variables territory scale
+## extract environmental variables territory scale - centroids
 
 ### get territories
 remove incomplete data and get a table with the centroids
@@ -158,13 +165,15 @@ nrow(data_final)
 
 plot(st_geometry(data_final))
 
-# st_write(data_final, "./data/territories_centroids_3035.gpkg")
+# st_write(data_final, "./data/territories_centroids_3035.gpkg", append = FALSE)
 ```
 
 ### extract environmental covariates 
 ```{r}
-mean_veg_territories <- terra::extract(veg_variables, data_final, fun = mean, na.rm = TRUE)
-mean_urban_territoreis <- terra::extract(urban_variables, data_final, fun = mean, na.rm = TRUE)
+length(unique(data_final$unique_ter_id))
+
+mean_urban_territoreis <- terra::extract(urban_variables_100m, data_final, fun = mean, na.rm = TRUE)
+mean_veg_territories <- terra::extract(veg_variables_100m, data_final, fun = mean, na.rm = TRUE)
 
 birds_terr_var <- cbind(data_final, mean_urban_territoreis, mean_veg_territories) %>% 
   dplyr::select(-ID, -ID.1)
@@ -172,7 +181,7 @@ birds_terr_var <- cbind(data_final, mean_urban_territoreis, mean_veg_territories
 summary(birds_terr_var)
 
 tmap_mode("view")
-tm_shape(urban_variables) +
+tm_shape(urban_variables_100m) +
   tm_raster("imperv") +
   tm_shape(birds_terr_var) +
   tm_polygons("imperv", alpha = 0.5, border.col = "black")
@@ -182,6 +191,42 @@ terr_variables <- birds_terr_var %>%
 
 # write.csv(terr_variables, "./data/territories_environmental_variables.csv", row.names = FALSE)
 ```
+
+## extract environmental variables territory scale - points
+
+### get territories
+remove incomplete data and get a table with the centroids
+```{r}
+data_points <- birds_locations %>% 
+  filter(transect != "be1") %>%  ## we remove transect 1 because it was incomplete
+  filter(!sp_name %in% c("Apus apus", "Passer domesticus"))  # these species do not have reliable data
+  
+nrow(data_points) # total number of points after filtering
+# [1] 13220
+```
+
+### extract environmental covariates 
+```{r}
+mean_urban_territories2 <- terra::extract(urban_variables_100m, data_points, fun = mean, na.rm = TRUE)
+mean_veg_territories2 <- terra::extract(veg_variables_100m, data_points, fun = mean, na.rm = TRUE)
+
+birds_terr_var2 <- cbind(data_points, mean_urban_territories2, mean_veg_territories2) %>% 
+  dplyr::select(-ID, -ID.1)
+
+summary(birds_terr_var2)
+
+terr_variables2 <- birds_terr_var2 %>% 
+  st_drop_geometry() %>% 
+  group_by(transect, unique_ter_id) %>% 
+  summarise(nvisits = n(), 
+            sp_name = unique(sp_name), 
+            sp_english = unique(sp_english),
+            sp_code = unique(sp_code), 
+            across(where(is.numeric), ~mean(.x, na.rm = TRUE)))
+  
+# write.csv(terr_variables2, "./data/territories_points_environmental_variables.csv", row.names = FALSE)
+```
+
 
 # Explore data
 
@@ -200,12 +245,16 @@ grid_birdabund <- read.csv("./data/grid_birds_abundance_corrected.csv") %>%
   mutate(transect = tolower(transect))
 
 ## explanatory variables for bird transects at grid and territory scales
-covariates_grid <- read.csv("data/grids_environmental_variables.csv")
-head(covariates_grid)
+grid_variables <- read.csv("data/grids_environmental_variables.csv")
+head(grid_variables)
 
 ## explanatory variables at territory territory scales
-covariates_terr <- read.csv("./data/territories_environmental_variables.csv")
-head(covariates_terr)
+terr_variables <- read.csv("./data/territories_environmental_variables.csv")
+head(terr_variables)
+
+## explanatory variables at territory territory scales
+terr_variables2 <- read.csv("./data/territories_points_environmental_variables.csv")
+head(terr_variables2)
 
 # trait values
 traits_birds <- read.csv("./data/birds_all_traits.csv") 
@@ -266,12 +315,12 @@ sd_area <- sd(terr_size$area_m, na.rm = TRUE) # 2956.72 m2
 ## Check variable correlations
 ```{r cor grid scale}
 ## get urbanization variables
-grid_urb <- covariates_grid %>% 
+grid_urb <- grid_variables %>% 
   dplyr::select(imperv, pop_den, tcd, light, noise)  
   
 ## get vegetation structure variables
-grid_veg <- covariates_grid %>% 
-  dplyr::select(veg_pca1, veg_pca2, glcm, glcm_hmg)  
+grid_veg <- grid_variables %>% 
+  dplyr::select(veg_pca1, veg_pca2, ndvi, glcm, glcm_hmg)  
 
 
 cor_grid_urb <- cor(grid_urb)
@@ -296,14 +345,14 @@ ggsave(filename = "./plots/Plot_correlation_veg_variables_grid.png",
 ```
 
 ```{r cor territory scale}
-colnames(envir_terr)
+colnames(terr_variables)
 
 ## get urbanization variables
-varcor_terr_urb <- covariates_terr %>% 
+varcor_terr_urb <- terr_variables %>% 
   dplyr::select(imperv, pop_den, tcd, light, noise)  
   
 ## get vegetation structure variables
-varcor_terr_veg <- covariates_terr %>%
+varcor_terr_veg <- terr_variables %>%
   dplyr::select(veg_pca1, veg_pca2, ndvi, glcm, glcm_hmg)  
 
 cor_table_terrurb <- cor(varcor_terr_urb, use = "pairwise.complete.obs")
@@ -326,6 +375,41 @@ ggcorrplot(cor_table_terrveg, hc.order = FALSE, type = "lower",
 ggsave(filename = "./plots/Plot_correlation_veg_variables_terrotory.png",
        dpi = 600, height = 6, width = 6)
 ```
+
+
+
+```{r cor territory point scale}
+colnames(terr_variables2)
+
+## get urbanization variables
+varcor_terr2_urb <- terr_variables2 %>% ungroup() %>% 
+  dplyr::select(imperv, pop_den, tcd, light, noise)  
+  
+## get vegetation structure variables
+varcor_terr2_veg <- terr_variables2 %>% ungroup() %>% 
+  dplyr::select(veg_pca1, veg_pca2, ndvi, glcm, glcm_hmg)  
+
+cor_table_terrurb2 <- cor(varcor_terr2_urb, use = "pairwise.complete.obs")
+cor_table_terrveg2 <- cor(varcor_terr2_veg, use = "pairwise.complete.obs")
+
+## Plotting
+## Urban
+ggcorrplot(cor_table_terrurb2, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_urban_variables_territory_points.png",
+       dpi = 600, height = 6, width = 6)
+
+## Vegetation structure
+ggcorrplot(cor_table_terrveg2, hc.order = FALSE, type = "lower",
+           lab = TRUE, outline.color = "white", 
+           lab_size = 6, tl.cex = 18)
+
+ggsave(filename = "./plots/Plot_correlation_veg_variables_terrotory_points.png",
+       dpi = 600, height = 6, width = 6)
+```
+
 
 
 
