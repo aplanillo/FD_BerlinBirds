@@ -1,0 +1,500 @@
+---
+title: "SEM_groups"
+output: html_document
+date: "2024-05-13"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# SEM models for bird groups
+
+```{r}
+source("./rscripts/source_packages.R")
+```
+
+
+### load data
+```{r}
+## FD data
+FD_groups <- read.csv("./output/functional_measures_transects_groups.csv")
+
+## env covariates grid
+covariates_grid <- read.csv("./data/grids_environmental_variables.csv")
+
+## env covariates territory centroid - 100m
+covariates_terr <- read.csv("./data/territories_environmental_variables.csv") 
+
+## env covariates territory points - 20m
+covariates_points <- read.csv("./data/locations_environmental_variables_20m.csv")
+
+## load the trait data to get species names
+traits_groups <- read.csv("./output/traits_groups.csv")
+```
+
+### scale FD values
+```{r}
+## standardize values
+fd_groups_std <- FD_groups %>% 
+  group_by(group) %>% 
+  arrange(transect) %>% 
+  mutate(across(where(is.numeric), list(scale))) %>% 
+  ungroup()
+  
+colnames(fd_groups_std)[6:8] <- c("birds_fric_std", "birds_feve_std", "birds_fdiv_std")
+  
+fd_g1 <- filter(fd_groups_std, group == "Group1")
+fd_g2 <- filter(fd_groups_std, group == "Group2")
+fd_g3 <- filter(fd_groups_std, group == "Group3")
+
+summary(fd_g3)
+```
+
+
+### prepare groups and associated env data
+```{r get species and transects for each group}
+## transects per group
+transect_g1 <- FD_groups %>% 
+  filter(group == "Group1") %>% 
+  dplyr::select(transect)
+
+transect_g2 <- FD_groups %>% 
+  filter(group == "Group2") %>% 
+  dplyr::select(transect)
+
+transect_g3 <- FD_groups %>% 
+  filter(group == "Group3") %>% 
+  dplyr::select(transect)
+
+## species in each transect## species in each group
+species_g1 <- traits_groups %>% 
+  filter(group == "Group1") %>% 
+  dplyr::select(sp2)
+nrow(species_g1) # 10 sp
+
+species_g2 <- traits_groups %>% 
+  filter(group == "Group2") %>% 
+  dplyr::select(sp2)
+nrow(species_g2) # 12sp
+
+species_g3 <- traits_groups %>% 
+  filter(group == "Group3") %>% 
+  dplyr::select(sp2)
+nrow(species_g3) # 42 sp
+```
+
+
+```{r group data grid scale}
+## env covariates grid 
+covariates_grid_g1_std <- covariates_grid %>% 
+  filter(transect %in% transect_g1$transect) %>% 
+  arrange(transect) %>% 
+  dplyr::select(-lat, -long) %>% 
+  mutate(across(where(is.numeric), list(std = scale)))
+
+covariates_grid_g2_std <- covariates_grid %>% 
+  filter(transect %in% transect_g2$transect) %>% 
+  arrange(transect) %>% 
+  dplyr::select(-lat, -long) %>% 
+  mutate(across(where(is.numeric), list(std = scale)))
+
+covariates_grid_g3_std <- covariates_grid %>% 
+  filter(transect %in% transect_g3$transect) %>% 
+  arrange(transect) %>% 
+  dplyr::select(-lat, -long) %>% 
+  mutate(across(where(is.numeric), list(std = scale)))
+```
+
+```{r group data territory scale}
+## env covariates territory
+## filtered to species for the group
+
+covariates_terr_g1_std <- covariates_terr %>% 
+  filter(transect %in% transect_g1$transect) %>% 
+  filter(sp_name %in% species_g1$sp2) %>% 
+  dplyr::select(-nvisits) %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean$", "", .))) %>% 
+  mutate(across(where(is.numeric), list(std = scale)))
+
+covariates_terr_g2_std <- covariates_terr %>% 
+  filter(transect %in% transect_g2$transect) %>% 
+  filter(sp_name %in% species_g2$sp2) %>% 
+  dplyr::select(-nvisits) %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean$", "", .))) %>% 
+  mutate(across(where(is.numeric), list(std = scale)))
+
+covariates_terr_g3_std <- covariates_terr %>% 
+  filter(transect %in% transect_g3$transect) %>% 
+  filter(sp_name %in% species_g3$sp2) %>% 
+  dplyr::select(-nvisits) %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean$", "", .))) %>% 
+  mutate(across(where(is.numeric), list(std = scale)))
+```
+
+```{r group data point scale}
+## env covariates points
+## filtered to species for the group
+covariates_pts_g1_std <- covariates_points %>% 
+  filter(transect %in% transect_g1$transect) %>% 
+  filter(sp_name %in% species_g1$sp2) %>% 
+  dplyr::select(-visit) %>% 
+  group_by(unique_ter_id, transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  ungroup() %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean_mean$", "", .))) %>% 
+    mutate(across(where(is.numeric), list(std = scale)))
+
+covariates_pts_g2_std <- covariates_points %>% 
+  filter(transect %in% transect_g2$transect) %>% 
+  filter(sp_name %in% species_g2$sp2) %>% 
+  dplyr::select(-visit) %>% 
+  group_by(unique_ter_id, transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  ungroup() %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean_mean$", "", .))) %>% 
+    mutate(across(where(is.numeric), list(std = scale)))
+
+covariates_pts_g3_std <- covariates_points %>% 
+  filter(transect %in% transect_g3$transect) %>% 
+  filter(sp_name %in% species_g3$sp2) %>% 
+  dplyr::select(-visit) %>% 
+  group_by(unique_ter_id, transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  ungroup() %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean_mean$", "", .))) %>% 
+    mutate(across(where(is.numeric), list(std = scale)))
+
+```
+
+### prepare data tables to run the models 
+```{r}
+## grid data
+g1_grid_data <- left_join(covariates_grid_g1_std, fd_g1, by = "transect")
+str(g1_grid_data)
+
+g2_grid_data <- left_join(covariates_grid_g2_std, fd_g2, by = "transect")
+str(g2_grid_data)
+
+g3_grid_data <- left_join(covariates_grid_g3_std, fd_g3, by = "transect")
+str(g3_grid_data)
+
+groups_grid_data <- list(g1_grid_data, g2_grid_data, g3_grid_data)
+names(groups_grid_data) <- c("grid_group1", "grid_group2", "grid_group3")
+
+## territory data
+g1_terr_data <- left_join(covariates_terr_g1_std, fd_g1, by = "transect")
+str(g1_grid_data)
+g2_terr_data <- left_join(covariates_terr_g2_std, fd_g2, by = "transect")
+g3_terr_data <- left_join(covariates_terr_g3_std, fd_g3, by = "transect")
+
+groups_terr_data <- list(g1_terr_data, g2_terr_data, g3_terr_data)
+names(groups_terr_data) <- c("terr_group1", "terr_group2", "terr_group3")
+
+## point data
+g1_point_data <- left_join(covariates_pts_g1_std, fd_g1, by = "transect")
+str(g1_grid_data)
+g2_point_data <- left_join(covariates_pts_g2_std, fd_g2, by = "transect")
+g3_point_data <- left_join(covariates_pts_g3_std, fd_g3, by = "transect")
+
+groups_point_data <- list(g1_point_data, g2_point_data, g3_point_data)
+names(groups_point_data) <- c("point_group1", "point_group2", "point_group3")
+
+## all data together
+groups_all_data <- c(groups_grid_data, groups_terr_data, groups_point_data)
+length(groups_all_data)
+```
+
+
+# FUNCTIONAL EVENNESS - FEVE
+
+### define model
+```{r}
+feve_sem_groups <-sem(
+  ' # direct effects
+  birds_feve_std ~ veg_pca1_std + veg_pca2_std + glcm_hmg_std + pop_den_std + noise_std
+
+  # mediators
+  veg_pca1_std ~ pop_den_std
+  veg_pca1_std ~ noise_std
+  veg_pca2_std ~ pop_den_std
+  veg_pca2_std ~ noise_std
+  glcm_hmg_std ~ pop_den_std
+  glcm_hmg_std ~ noise_std
+  
+  # variances of exogenous variables
+  veg_pca1_std ~~ veg_pca1_std
+  veg_pca2_std ~~ veg_pca2_std
+  glcm_hmg_std ~~ glcm_hmg_std
+  noise_std    ~~ noise_std
+  pop_den_std  ~~ pop_den_std
+  
+  # covariance of exogenouse variables
+  veg_pca1_std ~~ glcm_hmg_std
+  veg_pca2_std ~~ glcm_hmg_std
+  ')
+```
+
+## run feve models for all groups and scales in loop 
+```{r}
+## fit of the models
+fit_feve_list <- list()
+
+for(i in 1:length(groups_all_data)){
+  my_scale <- names(groups_all_data)[i]
+  my_data <- groups_all_data[[i]]
+  
+  fit_feve_tmp <- lavaan::sem(feve_sem_groups, my_data)
+  
+  fit_feve_list[[i]] <- fit_feve_tmp
+  names(fit_feve_list)[i] <- my_scale
+}
+
+length(fit_feve_list) # 9 (3 groups * 3 scales)
+names(fit_feve_list)
+
+summary(fit_feve_list$grid_group1,
+        rsquare = T,
+        standardized = T,
+        fit.measures = T)
+# saveRDS(fit_feve_list, "./output/sem_groups/SEM_feve_allgroups.RDS")
+
+## evaluate the models
+feve_models_cfi_values_table <- data.frame()
+feve_models_parameter_list <- list()
+feve_models_parameters_table <- data.frame()
+
+for(i in 1:length(fit_feve_list)){
+  my_model <- fit_feve_list[[i]]
+  model_name <- names(fit_feve_list)[i]
+  ## get cfi value
+  cfi_model <- fitmeasures(my_model)["cfi"]
+  cfi_tmp <- cbind.data.frame(model_name, cfi_model)
+  feve_models_cfi_values_table <- rbind(feve_models_cfi_values_table, cfi_tmp)
+  
+  ## get model parameters
+  table_parameters <- parameterEstimates(my_model, standardized=TRUE) %>%  head(11)
+  feve_models_parameter_list[[i]] <- table_parameters
+  names(feve_models_parameter_list)[i] <- model_name
+  
+   # in a table
+  table_parameters_df <- table_parameters %>% 
+    mutate(scale = model_name)
+  
+  feve_models_parameters_table <- rbind(feve_models_parameters_table, table_parameters_df)
+}
+
+feve_models_cfi_values_table
+ # write.csv(feve_models_cfi_values_table, "./output/sem_groups/SEM_feve_allgroups_cfi_values.csv", row.names = FALSE)
+feve_models_parameter_list
+ # saveRDS(feve_models_parameter_list, "./output/sem_groups/SEM_feve_allgroups_parameterTable.rds")
+feve_models_parameters_table
+# write.csv(feve_models_parameters_table, "./output/sem_groups/SEM_feve_allgroups_parameterTable_df.csv", row.names = FALSE)
+```
+
+
+# FUNCTIONAL RICHNESS - FRIC
+
+### define model
+```{r}
+fric_sem_groups <-sem(
+  ' # direct effects
+  birds_fric_std ~ veg_pca1_std + veg_pca2_std + glcm_hmg_std + pop_den_std + noise_std
+  
+  # mediators
+  veg_pca1_std ~ pop_den_std
+  veg_pca1_std ~ noise_std
+  veg_pca2_std ~ pop_den_std
+  veg_pca2_std ~ noise_std
+  glcm_hmg_std ~ pop_den_std
+  glcm_hmg_std ~ noise_std
+  
+  # variances of exogenous variables
+  veg_pca1_std ~~ veg_pca1_std
+  veg_pca2_std ~~ veg_pca2_std
+  glcm_hmg_std ~~ glcm_hmg_std
+  noise_std    ~~ noise_std
+  pop_den_std  ~~ pop_den_std
+  
+  # covariance of exogenouse variables
+  veg_pca1_std ~~ glcm_hmg_std
+  veg_pca2_std ~~ glcm_hmg_std
+  ')
+```
+
+## run fric models for all groups and scales in loop 
+```{r}
+## fit of the models
+fit_fric_list <- list()
+
+for(i in 1:length(groups_all_data)){
+  my_scale <- names(groups_all_data)[i]
+  my_data <- groups_all_data[[i]]
+  
+  fit_fric_tmp <- lavaan::sem(fric_sem_groups, my_data)
+  
+  fit_fric_list[[i]] <- fit_fric_tmp
+  names(fit_fric_list)[i] <- my_scale
+}
+
+length(fit_fric_list) # 9 (3 groups * 3 scales)
+names(fit_fric_list)
+
+summary(fit_fric_list$grid_group1,
+        rsquare = T,
+        standardized = T,
+        fit.measures = T)
+# saveRDS(fit_fric_list, "./output/sem_groups/SEM_fric_allgroups.RDS")
+
+## evaluate the models
+fric_models_cfi_values_table <- data.frame()
+fric_models_parameter_list <- list()
+fric_models_parameters_table <- data.frame()
+
+for(i in 1:length(fit_fric_list)){
+  my_model <- fit_fric_list[[i]]
+  model_name <- names(fit_fric_list)[i]
+  ## get cfi value
+  cfi_model <- fitmeasures(my_model)["cfi"]
+  cfi_tmp <- cbind.data.frame(model_name, cfi_model)
+  fric_models_cfi_values_table <- rbind(fric_models_cfi_values_table, cfi_tmp)
+  
+  ## get model parameters
+  table_parameters <- parameterEstimates(my_model, standardized=TRUE) %>%  head(11)
+  fric_models_parameter_list[[i]] <- table_parameters
+  names(fric_models_parameter_list)[i] <- model_name
+  
+  # in a table
+  table_parameters_df <- table_parameters %>% 
+    mutate(scale = model_name)
+  
+  fric_models_parameters_table <- rbind(fric_models_parameters_table, table_parameters_df)
+}
+
+fric_models_cfi_values_table
+# write.csv(fric_models_cfi_values_table, "./output/sem_groups/SEM_fric_allgroups_cfi_values.csv", row.names = FALSE)
+fric_models_parameter_list
+# saveRDS(fric_models_parameter_list, "./output/sem_groups/SEM_fric_allgroups_parameterTable.rds")
+fric_models_parameters_table
+# write.csv(fric_models_parameters_table, "./output/sem_groups/SEM_fric_allgroups_parameterTable_df.csv", row.names = FALSE)
+```
+
+
+# FUNCTIONAL DIVERGENCE - FDIV
+
+### define model
+```{r}
+fdiv_sem_groups <-sem(
+  ' # direct effects
+  birds_fdiv_std ~ veg_pca1_std + veg_pca2_std + glcm_hmg_std + pop_den_std + noise_std
+  
+  # mediators
+  veg_pca1_std ~ pop_den_std
+  veg_pca1_std ~ noise_std
+  veg_pca2_std ~ pop_den_std
+  veg_pca2_std ~ noise_std
+  glcm_hmg_std ~ pop_den_std
+  glcm_hmg_std ~ noise_std
+  
+  # variances of exogenous variables
+  veg_pca1_std ~~ veg_pca1_std
+  veg_pca2_std ~~ veg_pca2_std
+  glcm_hmg_std ~~ glcm_hmg_std
+  noise_std    ~~ noise_std
+  pop_den_std  ~~ pop_den_std
+  
+  # covariance of exogenouse variables
+  veg_pca1_std ~~ glcm_hmg_std
+  veg_pca2_std ~~ glcm_hmg_std
+  ')
+```
+
+## run fdiv models for all groups and scales in loop 
+```{r}
+## fit of the models
+fit_fdiv_list <- list()
+
+for(i in 1:length(groups_all_data)){
+  my_scale <- names(groups_all_data)[i]
+  my_data <- groups_all_data[[i]]
+  
+  fit_fdiv_tmp <- lavaan::sem(fdiv_sem_groups, my_data)
+  
+  fit_fdiv_list[[i]] <- fit_fdiv_tmp
+  names(fit_fdiv_list)[i] <- my_scale
+}
+
+length(fit_fdiv_list) # 9 (3 groups * 3 scales)
+names(fit_fdiv_list)
+
+summary(fit_fdiv_list$grid_group1,
+        rsquare = T,
+        standardized = T,
+        fit.measures = T)
+# saveRDS(fit_fdiv_list, "./output/sem_groups/SEM_fdiv_allgroups.RDS")
+
+## evaluate the models
+fdiv_models_cfi_values_table <- data.frame()
+fdiv_models_parameter_list <- list()
+fdiv_models_parameters_table <- data.frame()
+
+for(i in 1:length(fit_fdiv_list)){
+  my_model <- fit_fdiv_list[[i]]
+  model_name <- names(fit_fdiv_list)[i]
+  ## get cfi value
+  cfi_model <- fitmeasures(my_model)["cfi"]
+  cfi_tmp <- cbind.data.frame(model_name, cfi_model)
+  fdiv_models_cfi_values_table <- rbind(fdiv_models_cfi_values_table, cfi_tmp)
+  
+  ## get model parameters in list
+  table_parameters <- parameterEstimates(my_model, standardized=TRUE) %>%  head(11)
+  fdiv_models_parameter_list[[i]] <- table_parameters
+  names(fdiv_models_parameter_list)[i] <- model_name
+  
+  # in a table
+  table_parameters_df <- table_parameters %>% 
+    mutate(scale = model_name)
+  
+  fdiv_models_parameters_table <- rbind(fdiv_models_parameters_table, table_parameters_df)
+}
+
+fdiv_models_cfi_values_table
+# write.csv(fdiv_models_cfi_values_table, "./output/sem_groups/SEM_fdiv_allgroups_cfi_values.csv", row.names = FALSE)
+fdiv_models_parameter_list
+# saveRDS(fdiv_models_parameter_list, "./output/sem_groups/SEM_fdiv_allgroups_parameterTable.rds")
+fdiv_models_parameters_table
+# write.csv(fdiv_models_parameters_table, "./output/sem_groups/SEM_fdiv_allgroups_parameterTable_df.csv", row.names = FALSE)
+```
