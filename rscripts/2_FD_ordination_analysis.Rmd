@@ -105,6 +105,7 @@ birds_functional_measures <- birds_functional_measures %>%
   dplyr::select(transect, everything())
 
 # write.csv(birds_functional_measures, "./output/functional_measures_transects.csv", row.names = FALSE)
+# birds_functional_measures <- read.csv("./output/functional_measures_transects.csv")
 ```
 
 
@@ -113,8 +114,6 @@ birds_functional_measures <- birds_functional_measures %>%
 birds_functional_measures %>% 
   summarise(across(where(is.numeric), list(mean = mean, sd = sd, min = min, max = max)))
 ```
-  birds_fr_mean birds_fr_sd birds_fr_min birds_fr_max birds_fe_mean birds_fe_sd birds_fe_min birds_fe_max birds_fd_mean birds_fd_sd birds_fd_min birds_fd_max
-1   0.009612069  0.02091402 2.136223e-09    0.1043922       0.66899   0.0528327    0.5615259    0.7639633     0.8893223  0.02152722     0.852556     0.948475
 
 
 # 2. PCoA
@@ -133,6 +132,9 @@ covariates_grid <- read.csv("./data/grids_environmental_variables.csv")
 
 ## env covariates territory
 covariates_terr <- read.csv("./data/territories_environmental_variables.csv") 
+
+## env covariates points
+covariates_pts <- read.csv("./data/locations_environmental_variables_20m.csv") 
 ```
 
 
@@ -152,10 +154,14 @@ nrow(all_data_grid)
 ncol(all_data_grid)
 # [1] 112 # 95 species abundances, 2 coordinates, 10 env variables and 5 and mean trait values
 
+head(all_data_grid)
 ## divide into the proper tables
-species_matrix <- all_data_grid[,1:95]
-env_matrix <- all_data_grid[,98:107]
-traits_matrix <-all_data_grid[,108:112]
+species_matrix <- all_data_grid %>% 
+  dplyr::select(Accipiter_gentilis:Turdus_philomelos)
+env_matrix <- all_data_grid %>% 
+  dplyr::select(pop_den:glcm_hmg)
+traits_matrix <- all_data_grid %>% 
+  dplyr::select(log_bodymass:diet_cat)
 
 str(species_matrix)
 str(env_matrix)
@@ -179,10 +185,10 @@ tq <- envfit(PCoA_communitycomposition, traits_matrix, permu = 999)
 spf <- envfit(PCoA_communitycomposition, species_matrix, permu = 999)
 spf
 
-plot(PCoA_communitycomposition, type = "t", display = "sites")
-plot(ef, cex = 0.7)
-plot(tq, cex = 0.6, col = "darkgreen")
-plot(spf, col = "red")
+# plot(PCoA_communitycomposition, type = "t", display = "sites")
+# plot(ef, cex = 0.7)
+# plot(tq, cex = 0.6, col = "darkgreen")
+# plot(spf, col = "red")
 ```
 
 ```{r extract data for plotting}
@@ -198,7 +204,6 @@ species_scores <- filter(species_scores, species %in% sign_sp)
 
 # get sites loads in axis
 site_scores <- as.data.frame(scores(PCoA_communitycomposition)$sites)
-# site_scores <- read.csv("Book2.csv", row.names = 1)
 
 # get coordinates of environmental variables
 env_coord_cont <- as.data.frame(scores(ef, "vectors")) * ordiArrowMul(ef)
@@ -220,44 +225,38 @@ traits_coord_cont
 
 ```{r ggplot}
 ## plot in ggplot
-(myplot <- ggplot(data = site_scores, aes(x = MDS1, y = MDS2)) + 
+(myplot_grid <- ggplot(data = site_scores, aes(x = MDS1, y = MDS2)) + 
   geom_point(colour = "orange", size = 5, alpha = 0.3) + 
   # scale_colour_manual(values = c( "orange")) + 
   geom_segment(data = env_coord_cont, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-               size =1, alpha = 0.5, colour = "darkgreen", 
+               linewidth = 1, alpha = 0.5, colour = "darkgreen", 
                arrow = arrow(length = unit(0.3,"cm"))) +
   geom_text(data = env_coord_cont, aes(x = MDS1*1.2, y = MDS2*1.2),size = 4, colour = "darkgreen", 
             fontface = "bold", label = row.names(env_coord_cont)) + 
   geom_segment(data = traits_coord_cat, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-               size =1, alpha = 0.5, colour = "black", 
+               linewidth = 1, alpha = 0.5, colour = "black", 
                arrow = arrow(length = unit(0.3,"cm"))) +
   geom_text(data = traits_coord_cat, aes(x = MDS1*1.2, y = MDS2*1.2),size = 4,  colour = "black", 
             fontface = "bold", label = row.names(traits_coord_cat)) + 
   geom_segment(data = traits_coord_cont, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-               size =1, alpha = 0.5, colour = "black", 
+               linewidth = 1, alpha = 0.5, colour = "black", 
                arrow = arrow(length = unit(0.3,"cm"))) +
   geom_text(data = traits_coord_cont, aes(x = MDS1*1.2, y = MDS2*1.2),size = 4,  colour = "black", 
             fontface = "bold", label = row.names(traits_coord_cont)) + 
-   geom_hline(yintercept = 0, col = "grey70", lty = 4) +
+  geom_hline(yintercept = 0, col = "grey70", lty = 4) +
   geom_vline(xintercept = 0, col = "grey70", lty = 4) +
-
-  # geom_segment(data = species_scores, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-  #              size =0.1, alpha = 0.5, colour = "brown1") +
-  # geom_text(data = species_scores, aes(x = MDS1, y = MDS2), size = 2.5, colour = "brown1", 
-  #           alpha = 0.6,fontface = "italic", label = species_scores$species) + 
   xlim(c(-1.8,1.8)) +
   ylim(c(-1.5,1.5)) +
+  ggtitle("Grid scale - All birds") +
   theme(axis.title = element_text(size = 14, face = "bold", colour = "black"), 
        panel.background = element_blank(), 
        panel.border = element_rect(fill = NA, colour = "black"), 
-        # axis.ticks = element_blank(), axis.text = element_blank(), legend.key = element_blank(), 
-        # legend.title = element_text(size = 10, face = "bold", colour = "grey30"), 
-        # legend.text = element_text(size = 9, colour = "grey30")), 
        axis.text = element_text(size = 14, colour = "black")))
 
-ggsave(plot = myplot, 
-       filename = "./plots/PCoA_grid_scale.png", 
-       dpi = 900, height = 8, width = 8)
+# ggsave(plot = myplot_grid, 
+#        filename = "./plots/PCoA_grid_scale.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(myplot_grid, "./output/PCoAplot_grid_allbirds.rds")
 ```
 
 # 2.2 PCoA territory scale
@@ -271,8 +270,6 @@ covariates_terr_mean <- covariates_terr %>%
   summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE))))
 
 ## merge together to make sure the order is correct
-
-
 all_data_terr <- bird_abund %>% 
   left_join(covariates_terr_mean, by = "transect") %>% 
   left_join(mean_traits_transect, by = "transect") %>% 
@@ -284,9 +281,12 @@ ncol(all_data_terr)
 # [1] 110 # 95 species abundances, 10 env variables and 5 and mean trait values
 
 ## divide into the proper tables
-species_matrix_terr <- all_data_terr[,1:95]
-env_matrix_terr <- all_data_terr[,96:105]
-traits_matrix_terr <-all_data_terr[,106:110]
+species_matrix_terr <- all_data_terr %>% 
+  dplyr::select(Accipiter_gentilis:Turdus_philomelos)
+env_matrix_terr <- all_data_terr %>% 
+    dplyr::select(pop_den_mean:glcm_hmg_mean)
+traits_matrix_terr <-all_data_terr %>% 
+    dplyr::select(log_bodymass:diet_cat)
 
 str(species_matrix_terr)
 str(env_matrix_terr)
@@ -341,101 +341,88 @@ traits_coord_cont_terr
 ```
 
 ```{r plot PCoA - territories}
-(myplot2 <- ggplot(data = site_scores_terr, aes(x = MDS1, y = MDS2)) + 
+(myplot_terr <- ggplot(data = site_scores_terr, aes(x = MDS1, y = MDS2)) + 
   geom_point(colour = "orange", size = 5, alpha = 0.3) + 
   # scale_colour_manual(values = c( "orange")) + 
   geom_segment(data = env_coord_cont_terr, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-               size =1, alpha = 0.5, colour = "darkgreen", 
+               linewidth = 1, alpha = 0.5, colour = "darkgreen", 
                arrow = arrow(length = unit(0.3,"cm"))) +
   geom_text(data = env_coord_cont_terr, aes(x = MDS1*1.2, y = MDS2*1.2),size = 4, colour = "darkgreen", 
             fontface = "bold", label = row.names(env_coord_cont_terr)) + 
   geom_segment(data = traits_coord_cat_terr, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-               size =1, alpha = 0.5, colour = "black", 
+               linewidth = 1, alpha = 0.5, colour = "black", 
                arrow = arrow(length = unit(0.3,"cm"))) +
   geom_text(data = traits_coord_cat_terr, aes(x = MDS1*1.2, y = MDS2*1.2),size = 4,  colour = "black", 
             fontface = "bold", label = row.names(traits_coord_cat_terr)) + 
   geom_segment(data = traits_coord_cont_terr, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-               size =1, alpha = 0.5, colour = "black", 
+               linewidth = 1, alpha = 0.5, colour = "black", 
                arrow = arrow(length = unit(0.3,"cm"))) +
   geom_text(data = traits_coord_cont_terr, aes(x = MDS1*1.2, y = MDS2*1.2),size = 4,  colour = "black", 
             fontface = "bold", label = row.names(traits_coord_cont_terr)) + 
-   geom_hline(yintercept = 0, col = "grey70", lty = 4) +
+  geom_hline(yintercept = 0, col = "grey70", lty = 4) +
   geom_vline(xintercept = 0, col = "grey70", lty = 4) +
-
-  # geom_segment(data = species_scores_terr, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-  #              size =0.1, alpha = 0.5, colour = "brown1") +
-  # geom_text(data = species_scores_terr, aes(x = MDS1, y = MDS2), size = 2.5, colour = "brown1", 
-  #           alpha = 0.6,fontface = "italic", label = species_scores_terr$species) + 
   xlim(c(-1.8,1.8)) +
   ylim(c(-1.5,1.5)) +
+  ggtitle("Territory scale - All birds") +
   theme(axis.title = element_text(size = 14, face = "bold", colour = "black"), 
        panel.background = element_blank(), 
        panel.border = element_rect(fill = NA, colour = "black"), 
-        # axis.ticks = element_blank(), axis.text = element_blank(), legend.key = element_blank(), 
-        # legend.title = element_text(size = 10, face = "bold", colour = "grey30"), 
-        # legend.text = element_text(size = 9, colour = "grey30")), 
        axis.text = element_text(size = 14, colour = "black")))
 
-ggsave(plot = myplot2, 
-       filename = "./plots/PCoA_territory_scale.png", 
-       dpi = 900, height = 8, width = 8)
+# ggsave(plot = myplot_terr, 
+#        filename = "./plots/PCoA_territory_scale.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(myplot_terr, "./output/PCoAplot_terr_allbirds.rds")
 ```
 
 
-# 2.3 PCoA Territory scale points
+# 2.3 PCoA Location Points scale
 
 ```{r}
-## env covariates territory points
-covariates_terrpts <- read.csv("./data/territories_points_environmental_variables.csv") 
-```
-
-```{r}
-covariates_terrpts_mean <- covariates_terrpts %>% 
-  dplyr::select(-nvisits, -visit) %>% 
+covariates_pts_mean <- covariates_pts %>% 
+  dplyr::select(-visit) %>% 
   group_by(transect) %>% 
   summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE))))
 
 ## merge together to make sure the order is correct
-all_data_terr2 <- bird_abund %>% 
-  left_join(covariates_terrpts_mean, by = "transect") %>% 
+all_data_pts <- bird_abund %>% 
+  left_join(covariates_pts_mean, by = "transect") %>% 
   left_join(mean_traits_transect, by = "transect") %>% 
   column_to_rownames("transect")
 
-nrow(all_data_terr2)
+nrow(all_data_pts)
 # [1] 29 sites
-ncol(all_data_terr2)
+ncol(all_data_pts)
 # [1] 110 # 95 species abundances, 10 env variables and 5 and mean trait values
 
 ## divide into the proper tables
-species_matrix_terr2 <- all_data_terr2[,1:95]
-env_matrix_terr2 <- all_data_terr2[,96:105]
-traits_matrix_terr2 <-all_data_terr2[,106:110]
+species_matrix_pts <- all_data_pts %>% 
+  dplyr::select(Accipiter_gentilis:Turdus_philomelos)
+env_matrix_pts <- all_data_pts %>% 
+    dplyr::select(pop_den_mean:glcm_hmg_mean)
+traits_matrix_pts <-all_data_pts %>% 
+    dplyr::select(log_bodymass:diet_cat)
 
-str(species_matrix_terr2)
-str(env_matrix_terr2)
-str(traits_matrix_terr2)
+str(species_matrix_pts)
+str(env_matrix_pts)
+str(traits_matrix_pts)
 ```
 
 ### Run ordination
 ```{r}
 ## species ordination
-PCoA_communitycomposition <- capscale(species_matrix_terr2 ~ 1, dist="bray", metaMDS = TRUE)
+PCoA_communitycomposition <- capscale(species_matrix_pts ~ 1, dist="bray", metaMDS = TRUE)
 
 ## add environmetal variables
-ef <- envfit(PCoA_communitycomposition, env_matrix_terr2, permu = 999, na.rm = T)
+ef <- envfit(PCoA_communitycomposition, env_matrix_pts, permu = 999, na.rm = T)
 ef
 
 ## Add traits 
-tq <- envfit(PCoA_communitycomposition, traits_matrix_terr2, permu = 999)
+tq <- envfit(PCoA_communitycomposition, traits_matrix_pts, permu = 999)
 
 # Add species 
-spf <- envfit(PCoA_communitycomposition, species_matrix_terr2, permu = 999)
+spf <- envfit(PCoA_communitycomposition, species_matrix_pts, permu = 999)
 spf
-
-plot(PCoA_communitycomposition, type = "t", display = "sites")
-plot(ef, cex = 0.7)
-plot(tq, cex = 0.6, col = "darkgreen")
-plot(spf, col = "red")
 ```
 
 ```{r extract data for plotting}
@@ -473,47 +460,138 @@ traits_coord_cont
 
 ```{r ggplot}
 ## plot in ggplot
-(myplot <- ggplot(data = site_scores, aes(x = MDS1, y = MDS2)) + 
+(myplot_pts <- ggplot(data = site_scores, aes(x = MDS1, y = MDS2)) + 
   geom_point(colour = "orange", size = 5, alpha = 0.3) + 
   # scale_colour_manual(values = c( "orange")) + 
   geom_segment(data = env_coord_cont, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-               size =1, alpha = 0.5, colour = "darkgreen", 
+               linewidth = 1, alpha = 0.5, colour = "darkgreen", 
                arrow = arrow(length = unit(0.3,"cm"))) +
   geom_text(data = env_coord_cont, aes(x = MDS1*1.2, y = MDS2*1.2),size = 4, colour = "darkgreen", 
             fontface = "bold", label = row.names(env_coord_cont)) + 
   geom_segment(data = traits_coord_cat, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-               size =1, alpha = 0.5, colour = "black", 
+               linewidth = 1, alpha = 0.5, colour = "black", 
                arrow = arrow(length = unit(0.3,"cm"))) +
   geom_text(data = traits_coord_cat, aes(x = MDS1*1.2, y = MDS2*1.2),size = 4,  colour = "black", 
             fontface = "bold", label = row.names(traits_coord_cat)) + 
   geom_segment(data = traits_coord_cont, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-               size =1, alpha = 0.5, colour = "black", 
+               linewidth = 1, alpha = 0.5, colour = "black", 
                arrow = arrow(length = unit(0.3,"cm"))) +
   geom_text(data = traits_coord_cont, aes(x = MDS1*1.2, y = MDS2*1.2),size = 4,  colour = "black", 
             fontface = "bold", label = row.names(traits_coord_cont)) + 
-   geom_hline(yintercept = 0, col = "grey70", lty = 4) +
+  geom_hline(yintercept = 0, col = "grey70", lty = 4) +
   geom_vline(xintercept = 0, col = "grey70", lty = 4) +
-
-  # geom_segment(data = species_scores, aes(x = 0, y = 0, xend = MDS1, yend = MDS2), 
-  #              size =0.1, alpha = 0.5, colour = "brown1") +
-  # geom_text(data = species_scores, aes(x = MDS1, y = MDS2), size = 2.5, colour = "brown1", 
-  #           alpha = 0.6,fontface = "italic", label = species_scores$species) + 
   xlim(c(-1.8,1.8)) +
   ylim(c(-1.5,1.5)) +
+  ggtitle("Point scale - All birds") +
   theme(axis.title = element_text(size = 14, face = "bold", colour = "black"), 
        panel.background = element_blank(), 
        panel.border = element_rect(fill = NA, colour = "black"), 
-        # axis.ticks = element_blank(), axis.text = element_blank(), legend.key = element_blank(), 
-        # legend.title = element_text(size = 10, face = "bold", colour = "grey30"), 
-        # legend.text = element_text(size = 9, colour = "grey30")), 
        axis.text = element_text(size = 14, colour = "black")))
 
-ggsave(plot = myplot, 
-       filename = "./plots/PCoA_terr_points_scale.png", 
-       dpi = 900, height = 8, width = 8)
+# ggsave(plot = myplot_pts, 
+#        filename = "./plots/PCoA_points_scale.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(myplot_pts, "./output/PCoAplot_pts_allbirds.rds")
 ```
 
 
+## Put all plots together
+```{r load data}
+library(patchwork)
+
+myplot_grid <- readRDS("./output/PCoAplot_grid_allbirds.rds")
+myplot_terr <- readRDS("./output/PCoAplot_terr_allbirds.rds")
+myplot_pts <- readRDS("./output/PCoAplot_pts_allbirds.rds")
+```
 
 
+```{r prepare plot layout}
+## get plots without titles
+plot_grid <- myplot_grid + ggtitle(NULL) +
+  labs(tag = "A") +
+  xlab("MDS1") +
+  ylab("MDS2") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.13, 0.95))
 
+plot_terr <- myplot_terr + ggtitle(NULL) +
+  labs(tag = "B") +
+  xlab("MDS1") +
+  ylab("MDS2") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.09, 0.95))
+
+plot_pts <- myplot_pts + ggtitle(NULL) +
+  labs(tag = "C") +
+  xlab("MDS1") +
+  ylab("MDS2") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.09, 0.95))
+
+
+## get row names
+col1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Grid Scale", size = 8) + theme_void() 
+col2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Territory Scale", size = 8) + theme_void() 
+col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", , size = 8) + theme_void() 
+row1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="All birds", angle = 90, , size = 8) + theme_void() 
+
+## define layout 
+layoutplot <- "
+#aaabbbccc
+dggghhhiii
+dggghhhiii
+"
+
+plotlist <- list(a = col1, b = col2, c = col3,
+                 d = row1, 
+                 g = plot_grid, h = plot_terr, i = plot_pts)
+
+wrap_plots(plotlist, guides = 'collect', design = layoutplot) +
+  plot_layout(axis_titles = "collect", heights = c(1, 0.5 , 3)) 
+  # plot_annotation(tag_levels = 'A') 
+  
+ggsave(filename = "./plots/PCoA_allplots_allbirds.png", 
+        dpi = 900, height = 6, width = 16)
+```
+
+
+## Plot grid + point scale
+
+```{r prepare grid point layout}
+## get plots without titles
+plot_grid <- myplot_grid + ggtitle(NULL) +
+  labs(tag = "A") +
+  xlab("MDS1") +
+  ylab("MDS2") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.15, 0.95))
+
+plot_pts <- myplot_pts + ggtitle(NULL) +
+  labs(tag = "B") +
+  xlab("MDS1") +
+  ylab("MDS2") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.09, 0.95))
+
+
+## get row names
+col1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Grid Scale", size = 8) + theme_void() 
+col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", , size = 8) + theme_void() 
+
+## define layout 
+layoutplot <- "
+aaaccc
+gggiii
+gggiii
+"
+
+plotlist <- list(a = col1, c = col3,
+                 g = plot_grid, i = plot_pts)
+
+wrap_plots(plotlist, guides = 'collect', design = layoutplot) +
+  plot_layout(axis_titles = "collect", heights = c(1, 0.5 , 3)) 
+  # plot_annotation(tag_levels = 'A') 
+  
+ggsave(filename = "./plots/PCoA_2scales_allbirds.png", 
+        dpi = 900, height = 6, width = 10)
+```
