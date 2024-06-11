@@ -1,0 +1,284 @@
+---
+title: "SEM_all"
+output: html_document
+date: "2024-05-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# SEM models for bird groups
+
+```{r}
+source("./rscripts/source_packages.R")
+```
+
+
+### load data
+```{r}
+## FD data
+FD_birds <- read.csv("./output/functional_measures_transects.csv")
+
+## env covariates grid
+cov_grid <- read.csv("./data/grids_environmental_variables.csv" )
+
+## env covariates territory centroid - 100m
+cov_terr <- read.csv("./data/territories_environmental_variables.csv") 
+
+## env covariates territory points - 20m
+cov_points <- read.csv("./data/locations_environmental_variables_20m.csv")
+
+## load the trait data to get species names
+traits_groups <- read.csv("./output/traits_groups.csv")
+```
+
+### scale values
+```{r}
+## standardize values
+fd_birds_std <- FD_birds %>% 
+  arrange(transect) %>% 
+  mutate(across(where(is.numeric), list(scale))) %>% 
+  rename_at(vars(ends_with("_1")), ~ sub("_1",  "_std", .)) 
+
+summary(fd_birds_std)
+
+## grid environmental data
+cov_grid_std <- cov_grid %>% 
+  arrange(transect) %>% 
+  dplyr::select(-lat, -long) %>% 
+  mutate(across(where(is.numeric), list(std = scale))) %>% 
+  rename_at(vars(ends_with("_1")), ~ sub("_1",  "_std", .)) 
+
+## env covariates territory
+cov_terr_std <- cov_terr %>% 
+  arrange(transect) %>% 
+  dplyr::select(-nvisits) %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean$", "", .))) %>% 
+  ungroup() %>% 
+  as.data.frame() %>% 
+  mutate(across(where(is.numeric), list(std = scale))) %>% 
+  rename_at(vars(ends_with("_1")), ~ sub("_1",  "_std", .)) 
+
+## env covariates points
+cov_pts_std <- cov_points %>% 
+  arrange(transect) %>% 
+  dplyr::select(-visit) %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean$", "", .))) %>% 
+  ungroup() %>% 
+  as.data.frame() %>% 
+  mutate(across(where(is.numeric), list(std = scale)))  %>% 
+  rename_at(vars(ends_with("_1")), ~ sub("_1",  "_std", .)) 
+```
+
+### data tables for the models 
+```{r}
+## grid data
+grid_data <- left_join(cov_grid_std, fd_birds_std, by = "transect")
+head(grid_data)
+
+## territory data
+terr_data <- left_join(cov_terr_std, fd_birds_std, by = "transect")
+head(terr_data)
+
+## point data
+point_data <- left_join(cov_pts_std, fd_birds_std, by = "transect")
+head(point_data)
+
+alldata <- list(grid_data, terr_data, point_data)
+names(alldata) <- c("grid_data", "terr_data", "point_data")
+```
+
+# DEFINE MODELS
+
+### Functional evenness
+```{r}
+feve_sem <-sem(
+  ' # direct effects
+  birds_fe_std ~ veg_pca1_std + veg_pca2_std + glcm_hmg_std + pop_den_std + noise_std
+
+  # mediators
+  veg_pca1_std ~ pop_den_std
+  veg_pca1_std ~ noise_std
+  veg_pca2_std ~ pop_den_std
+  veg_pca2_std ~ noise_std
+  glcm_hmg_std ~ pop_den_std
+  glcm_hmg_std ~ noise_std
+  
+  # variances of exogenous variables
+  veg_pca1_std ~~ veg_pca1_std
+  veg_pca2_std ~~ veg_pca2_std
+  glcm_hmg_std ~~ glcm_hmg_std
+  noise_std    ~~ noise_std
+  pop_den_std  ~~ pop_den_std
+  
+  # covariance of exogenouse variables
+  veg_pca1_std ~~ glcm_hmg_std
+  veg_pca2_std ~~ glcm_hmg_std
+  ')
+```
+
+### Functional richness
+
+```{r}
+fric_sem <-sem(
+  ' # direct effects
+  birds_fr_std ~ veg_pca1_std + veg_pca2_std + glcm_hmg_std + pop_den_std + noise_std
+  
+  # mediators
+  veg_pca1_std ~ pop_den_std
+  veg_pca1_std ~ noise_std
+  veg_pca2_std ~ pop_den_std
+  veg_pca2_std ~ noise_std
+  glcm_hmg_std ~ pop_den_std
+  glcm_hmg_std ~ noise_std
+  
+  # variances of exogenous variables
+  veg_pca1_std ~~ veg_pca1_std
+  veg_pca2_std ~~ veg_pca2_std
+  glcm_hmg_std ~~ glcm_hmg_std
+  noise_std    ~~ noise_std
+  pop_den_std  ~~ pop_den_std
+  
+  # covariance of exogenouse variables
+  veg_pca1_std ~~ glcm_hmg_std
+  veg_pca2_std ~~ glcm_hmg_std
+  ')
+```
+
+### Functional divergence
+
+```{r}
+fdiv_sem <-sem(
+  ' # direct effects
+  birds_fd_std ~ veg_pca1_std + veg_pca2_std + glcm_hmg_std + pop_den_std + noise_std
+  
+  # mediators
+  veg_pca1_std ~ pop_den_std
+  veg_pca1_std ~ noise_std
+  veg_pca2_std ~ pop_den_std
+  veg_pca2_std ~ noise_std
+  glcm_hmg_std ~ pop_den_std
+  glcm_hmg_std ~ noise_std
+  
+  # variances of exogenous variables
+  veg_pca1_std ~~ veg_pca1_std
+  veg_pca2_std ~~ veg_pca2_std
+  glcm_hmg_std ~~ glcm_hmg_std
+  noise_std    ~~ noise_std
+  pop_den_std  ~~ pop_den_std
+  
+  # covariance of exogenouse variables
+  veg_pca1_std ~~ glcm_hmg_std
+  veg_pca2_std ~~ glcm_hmg_std
+  ')
+
+```
+
+
+## Run sem models all scales
+```{r}
+## FEve models
+fit_feve_birds <- list()
+
+for(i in 1:length(alldata)){
+  my_scale <- names(alldata)[i]
+  my_data <- alldata[[i]]
+  
+  fit_feve_tmp <- lavaan::sem(feve_sem, my_data)
+  
+  fit_feve_birds[[i]] <- fit_feve_tmp
+  names(fit_feve_birds)[i] <- paste("feve", my_scale, sep = "_")
+}
+
+length(fit_feve_birds) # 39 (3 scales)
+names(fit_feve_birds)
+
+summary(fit_feve_birds$feve_grid_data,
+        rsquare = T,
+        standardized = T,
+        fit.measures = T)
+
+
+## FRic models
+fit_fric_birds <- list()
+
+for(i in 1:length(alldata)){
+  my_scale <- names(alldata)[i]
+  my_data <- alldata[[i]]
+  
+  fit_fric_tmp <- lavaan::sem(fric_sem, my_data)
+  
+  fit_fric_birds[[i]] <- fit_fric_tmp
+  names(fit_fric_birds)[i] <-  paste("fric", my_scale, sep = "_")
+}
+
+length(fit_fric_birds) # 39 (3 scales)
+names(fit_fric_birds)
+
+summary(fit_fric_birds$fric_grid_data,
+        rsquare = T,
+        standardized = T,
+        fit.measures = T)
+
+## FDiv models
+fit_fdiv_birds <- list()
+
+for(i in 1:length(alldata)){
+  my_scale <- names(alldata)[i]
+  my_data <- alldata[[i]]
+  
+  fit_fdiv_tmp <- lavaan::sem(fdiv_sem, my_data)
+  
+  fit_fdiv_birds[[i]] <- fit_fdiv_tmp
+  names(fit_fdiv_birds)[i] <- paste("fdiv", my_scale, sep = "_")
+}
+
+length(fit_fdiv_birds) # 39 (3 scales)
+names(fit_fdiv_birds)
+
+summary(fit_fdiv_birds$fdiv_grid_data,
+        rsquare = T,
+        standardized = T,
+        fit.measures = T)
+
+
+
+all_sems <- c(fit_fric_birds, fit_feve_birds, fit_fdiv_birds)
+
+## evaluate the models
+models_cfi_values_table <- data.frame()
+models_parameters_table <- data.frame()
+
+for(i in 1:length(all_sems)){
+  my_model <- all_sems[[i]]
+  model_name <- names(all_sems)[i]
+  ## get cfi value
+  cfi_model <- fitmeasures(my_model)["cfi"]
+  
+  
+  cfi_tmp <- cbind.data.frame(model_name, cfi_model)
+  models_cfi_values_table <- rbind(models_cfi_values_table, cfi_tmp)
+  
+  ## get model parameters
+  table_parameters <- parameterEstimates(my_model, standardized=TRUE) %>%  head(11)
+  table_parameters_df <- table_parameters %>% 
+    mutate(scale = model_name)
+  
+  models_parameters_table <- rbind(models_parameters_table, table_parameters_df)
+}
+
+models_cfi_values_table
+# write.csv(models_cfi_values_table, "./output/SEM_allscales_cfi_values.csv", row.names = FALSE)
+models_parameters_table
+# write.csv(models_parameters_table, "./output/SEM_allscales_parameterTable_df.csv", row.names = FALSE)
+```
+
+
+
