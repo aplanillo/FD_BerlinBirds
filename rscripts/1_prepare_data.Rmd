@@ -99,7 +99,7 @@ plot(birds_grid, add = TRUE, border = "red", col = "transparent")
 ```
 
 ## extract environmental variables grid scale
-
+Average values for the grid
 ```{r}
 mean_urban_grid <- terra::extract(urban_variables_100m, birds_grid, fun = mean, na.rm = TRUE)
 head(mean_urban_grid)
@@ -122,6 +122,7 @@ grid_variables <- birds_grid_var %>%
   st_drop_geometry()
 
 # write.csv(grid_variables, "./data/grids_environmental_variables.csv", row.names = FALSE)
+# grid_variables <- read.csv("./data/grids_environmental_variables.csv")
 ```
 
 
@@ -169,6 +170,7 @@ plot(st_geometry(data_final))
 ```
 
 ### extract environmental covariates 
+Values of the territory centroids
 ```{r}
 length(unique(data_final$unique_ter_id))
 
@@ -190,41 +192,91 @@ terr_variables <- birds_terr_var %>%
   st_drop_geometry()
 
 # write.csv(terr_variables, "./data/territories_environmental_variables.csv", row.names = FALSE)
+# terr_variables <- read.csv("./data/territories_environmental_variables.csv")
 ```
 
 ## extract environmental variables territory scale - points
 
-### get territories
-remove incomplete data and get a table with the centroids
+### get birds locations per territory
 ```{r}
-data_points <- birds_locations %>% 
+# territory bird data
+birds_locations <- st_read("./data/bird_territories_3035.gpkg")
+
+## remove extra sp
+birds_locs <- birds_locations %>% 
   filter(transect != "be1") %>%  ## we remove transect 1 because it was incomplete
   filter(!sp_name %in% c("Apus apus", "Passer domesticus"))  # these species do not have reliable data
-  
-nrow(data_points) # total number of points after filtering
-# [1] 13220
+
+
+## Check territory numbers match
+n_terr <- birds_locs %>% 
+  st_drop_geometry() %>% 
+  ungroup() %>% 
+  group_by(transect, unique_ter_id) %>% 
+  summarise(npoints = n()) %>% 
+  group_by(transect) %>% 
+  summarise(nterr = n())
+
+
+nterr_grid <- grid_birdabund %>% 
+  mutate(nterr = rowSums(across(where(is.numeric)))) %>% 
+  dplyr::select(transect, nterr)
+
+cbind.data.frame(n_terr, nterr_grid)
 ```
 
-### extract environmental covariates 
-```{r}
-mean_urban_territories2 <- terra::extract(urban_variables_100m, data_points, fun = mean, na.rm = TRUE)
-mean_veg_territories2 <- terra::extract(veg_variables_100m, data_points, fun = mean, na.rm = TRUE)
 
-birds_terr_var2 <- cbind(data_points, mean_urban_territories2, mean_veg_territories2) %>% 
+### make all rasters 20 m resolution and stack them
+
+set all variables to the same extent
+```{r}
+imperv <- project(imperv, pop_den)
+
+## we do population density separately to obtain human/ha values
+urban_tmp <- c(imperv, tcd, light, noise)
+names(urban_tmp) <- c("imperv", "tcd", "light", "noise")
+
+## Urban variables are originally at 10m res, thus we use fact 2 to 20m
+urban_tmp_20m <- terra::aggregate(urban_tmp, fact = 2, fun = mean, na.rm = TRUE)
+popden_20m <- terra::aggregate(pop_den, fact = 2, fun = sum, na.rm = TRUE)
+names(popden_20m) <- "pop_den"
+
+urban_variables_20m <- c(popden_20m, urban_tmp_20m)
+
+## vegetation structure variables
+veg_variables <- c(glcm_rast$PC1, glcm_rast$PC2, glcm_rast$ndvi, glcm_rast$glcm_mean, glcm_rast$glcm_homogeneity)
+names(veg_variables) <- c("veg_pca1", "veg_pca2", "ndvi", "glcm", "glcm_hmg")
+
+## veg variables are originally at 5m res, thus we use fact 4 to 20m
+veg_variables_20m <- terra::aggregate(veg_variables, fact = 4, fun = mean, na.rm = TRUE)
+veg_variables_20m
+```
+
+## extract environmental variables 
+Values at the exact bird locations
+```{r}
+mean_urban_locs <- terra::extract(urban_variables_20m, birds_locs, fun = mean, na.rm = TRUE)
+head(mean_urban_locs)
+
+mean_veg_locs <- terra::extract(veg_variables_20m, birds_locs, fun = mean, na.rm = TRUE)
+head(mean_veg_locs)
+
+birds_locs_20m <- cbind(birds_locs, mean_urban_locs, mean_veg_locs) %>% 
   dplyr::select(-ID, -ID.1)
 
-summary(birds_terr_var2)
+summary(birds_locs_20m)
 
-terr_variables2 <- birds_terr_var2 %>% 
-  st_drop_geometry() %>% 
-  group_by(transect, unique_ter_id) %>% 
-  summarise(nvisits = n(), 
-            sp_name = unique(sp_name), 
-            sp_english = unique(sp_english),
-            sp_code = unique(sp_code), 
-            across(where(is.numeric), ~mean(.x, na.rm = TRUE)))
-  
-# write.csv(terr_variables2, "./data/territories_points_environmental_variables.csv", row.names = FALSE)
+tmap_mode("view")
+tm_shape(urban_variables_20m) +
+  tm_raster("imperv") +
+  tm_shape(birds_locs_20m) +
+  tm_dots("imperv", alpha = 0.5, border.col = "black")
+
+locs_variables_20m <- birds_locs_20m %>% 
+  st_drop_geometry()
+
+# write.csv(locs_variables_20m, "./data/locations_environmental_variables_20m.csv", row.names = FALSE)
+# locs_variables_20m <- read.csv("./data/locations_environmental_variables_20m.csv")
 ```
 
 
@@ -253,8 +305,8 @@ terr_variables <- read.csv("./data/territories_environmental_variables.csv")
 head(terr_variables)
 
 ## explanatory variables at territory territory scales
-terr_variables2 <- read.csv("./data/territories_points_environmental_variables.csv")
-head(terr_variables2)
+pts_variables <- read.csv("./data/locations_environmental_variables_20m.csv")
+head(pts_variables)
 
 # trait values
 traits_birds <- read.csv("./data/birds_all_traits.csv") 
@@ -267,25 +319,6 @@ traits_birds <- traits_birds %>%
   dplyr::select(-sp_synonym, -migrant_cat)
 ```
 
-
-## Check territory numbers match
-
-```{r n territories per sp}
-n_terr <- birds_points %>% 
-  st_drop_geometry() %>% 
-  ungroup() %>% 
-  group_by(transect, unique_ter_id) %>% 
-  summarise(npoints = n()) %>% 
-  group_by(transect) %>% 
-  summarise(nterr = n())
-
-
-nterr_grid <- grid_birdabund %>% 
-  mutate(nterr = rowSums(across(where(is.numeric)))) %>% 
-  dplyr::select(transect, nterr)
-
-cbind.data.frame(n_terr, nterr_grid)
-```
 
 ## get bird territory size
 To extract size, we need polygons, thus we select the territories with at least three points for this
@@ -304,6 +337,7 @@ terr_size <- terr_size_tmp %>%
    
 terr_size$area_m <- as.numeric(st_area(terr_size))
 
+## do we have many large territories?
 terr_size %>% 
   filter(area_m > 1000)
 
@@ -372,44 +406,40 @@ ggcorrplot(cor_table_terrveg, hc.order = FALSE, type = "lower",
            lab = TRUE, outline.color = "white", 
            lab_size = 6, tl.cex = 18)
 
-ggsave(filename = "./plots/Plot_correlation_veg_variables_terrotory.png",
+ggsave(filename = "./plots/Plot_correlation_veg_variables_territory.png",
        dpi = 600, height = 6, width = 6)
 ```
 
 
-
-```{r cor territory point scale}
-colnames(terr_variables2)
+```{r cor point scale}
+colnames(pts_variables)
 
 ## get urbanization variables
-varcor_terr2_urb <- terr_variables2 %>% ungroup() %>% 
+varcor_pts_urb <- pts_variables %>% ungroup() %>% 
   dplyr::select(imperv, pop_den, tcd, light, noise)  
   
 ## get vegetation structure variables
-varcor_terr2_veg <- terr_variables2 %>% ungroup() %>% 
+varcor_pts_veg <- pts_variables %>% ungroup() %>% 
   dplyr::select(veg_pca1, veg_pca2, ndvi, glcm, glcm_hmg)  
 
-cor_table_terrurb2 <- cor(varcor_terr2_urb, use = "pairwise.complete.obs")
-cor_table_terrveg2 <- cor(varcor_terr2_veg, use = "pairwise.complete.obs")
+cor_table_ptsurb <- cor(varcor_pts_urb, use = "pairwise.complete.obs")
+cor_table_ptsveg <- cor(varcor_pts_veg, use = "pairwise.complete.obs")
 
 ## Plotting
 ## Urban
-ggcorrplot(cor_table_terrurb2, hc.order = FALSE, type = "lower",
+ggcorrplot(cor_table_ptsurb, hc.order = FALSE, type = "lower",
            lab = TRUE, outline.color = "white", 
            lab_size = 6, tl.cex = 18)
 
-ggsave(filename = "./plots/Plot_correlation_urban_variables_territory_points.png",
+ggsave(filename = "./plots/Plot_correlation_urban_variables_points.png",
        dpi = 600, height = 6, width = 6)
 
 ## Vegetation structure
-ggcorrplot(cor_table_terrveg2, hc.order = FALSE, type = "lower",
+ggcorrplot(cor_table_ptsveg, hc.order = FALSE, type = "lower",
            lab = TRUE, outline.color = "white", 
            lab_size = 6, tl.cex = 18)
 
-ggsave(filename = "./plots/Plot_correlation_veg_variables_terrotory_points.png",
+ggsave(filename = "./plots/Plot_correlation_veg_variables_points.png",
        dpi = 600, height = 6, width = 6)
 ```
-
-
-
 
