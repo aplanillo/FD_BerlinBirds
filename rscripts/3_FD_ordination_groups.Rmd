@@ -1,0 +1,837 @@
+---
+title: "FilteredData"
+author: "Aimara Planillo"
+date: "2024-01-23"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Repeat the same PCoA and SEMs to the three groups of birds identified in Planillo et al. 2021. DivDist
+
+The analyses in Planillo et al. 2021 also removed all exotic, aquatic and very rare species, as they only created noise in the data, thus using a total of 67 species. Those species were divided into three groups based on their responses to urbanization:
+
+- Group 1: Urban birds - urban exploiters, related to most urbanized areas
+- Group 2: Woodland birds - urban tolerants, related to tree cover
+- Group 3: Nature birds - urban avoiders, related to nature like areas and limited anthropogenic disturbance
+
+We remove the apus apus and passer domesticus because the difficulties to assess the small scale home range
+
+```{r prepare workspace}
+source("./rscripts/source_packages.R")
+```
+
+### load data
+```{r}
+## env covariates grid
+covariates_grid <- read.csv("./data/grids_environmental_variables.csv")
+rownames(covariates_grid) <- NULL
+
+## env covariates territory centroid - 100m
+covariates_terr <- read.csv("./data/territories_environmental_variables.csv") 
+rownames(covariates_terr) <- NULL
+
+## env covariates territory points - 20m
+covariates_points <- read.csv("./data/locations_environmental_variables_20m.csv")
+rownames(covariates_points) <- NULL
+
+
+## load list of the birds with the assigned group
+bird_groups <- read.csv("./data/species_groups_responses.csv")
+bird_groups <- bird_groups %>% 
+  filter(!species %in% c("A.apus", "P.domesticus")) %>% 
+  rename(short_names = species)
+
+## grid data
+bird_data <- read.csv("./data/grid_birds_abundance_corrected.csv") %>%
+  rename(transect = X) %>% 
+  mutate(transect = tolower(transect)) %>% 
+  column_to_rownames("transect")
+ 
+ncol(bird_data) #95 species
+nrow(bird_groups) #64 species
+
+
+bird_matrix <- as.matrix(bird_data)
+
+## order species alphabetically
+bird_matrix <- bird_matrix %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  rownames_to_column("species") %>% 
+  arrange(species)
+
+
+## trait data
+birds_traits <- read.csv("data/birds_all_traits.csv") 
+head(birds_traits)
+birds_traits <- birds_traits %>% 
+  arrange(species) %>% 
+  filter(!species %in% c("Apus apus", "Passer domesticus")) %>% 
+  mutate(migrant_num = as.numeric(migrant_num),
+         diet_cat = as.factor(diet_cat))%>%
+  dplyr::select(-migrant_cat)
+
+# get species names with underscore
+name1 <- stringr::word(birds_traits$species, 1)
+name2 <- stringr::word(birds_traits$species, 2)
+
+name_firstletter <- stringr::str_sub(birds_traits$species, 1, 1)
+
+full_names <- paste(name1,name2, sep = "_")
+short_names <- paste(name_firstletter, name2, sep = ".")
+```
+
+### get tables for the groups
+```{r}
+## get trait data for the groups
+traits_matrix <- birds_traits %>%
+  mutate(sp2 = species, 
+         species = full_names, 
+         short_names = short_names) %>% 
+  dplyr::select(-sp_synonym) %>% 
+  left_join(bird_groups, by = "short_names") %>% 
+  filter(!is.na(group))
+# write.csv(traits_matrix, "./output/traits_groups.csv", row.names = FALSE)
+
+nrow(traits_matrix) # 64
+## trait data
+group_list <- split.data.frame(traits_matrix, f = traits_matrix$group)
+
+## get birds abundance by group
+bird_abund <- bird_matrix %>% 
+  filter(species %in% traits_matrix$species) %>% 
+  mutate(group = traits_matrix$group)
+
+bird_abund_g1 <- bird_abund %>% 
+  filter(group == "Group1") %>% 
+  dplyr::select(-group) %>% 
+  column_to_rownames("species") %>% 
+  t()
+
+bird_abund_g2 <- bird_abund %>% 
+  filter(group == "Group2") %>% 
+  dplyr::select(-group) %>% 
+  column_to_rownames("species") %>% 
+  t()
+
+bird_abund_g3 <- bird_abund %>% 
+  filter(group == "Group3") %>% 
+  dplyr::select(-group) %>% 
+  column_to_rownames("species") %>% 
+  t()
+
+bird_abund_list <- list(bird_abund_g1, bird_abund_g2, bird_abund_g3)
+names(bird_abund_list) <- c("Group1", "Group2", "Group3")
+
+```
+
+
+# 1. Calculate FD indices for the different monitoring grids
+
+```{r}
+names(group_list)
+names(bird_abund_list)
+
+mean_traits_groups <- data.frame()
+FD_groups <- data.frame()
+
+for(i in 1:length(group_list)){
+  traits_group <- group_list[[i]] 
+  rownames(traits_group) <- NULL
+  traits_group <- traits_group %>% 
+    dplyr::select(-short_names, -sp2) %>% 
+    column_to_rownames("species")
+  
+  abund_group <- bird_abund_list[[i]]   
+  abund_group <- abund_group %>% 
+    as.matrix()
+  
+  FD_group <- FD::dbFD(x = traits_group, a = abund_group, 
+                     w.abun = TRUE, corr = 'cailliez', 
+                     m = 'max', clust.type = 'ward',
+                     print.pco = TRUE, calc.FGR = FALSE, ## since we decided we'll focus on FRic, Fdis 
+                     stand.FRic = TRUE, calc.FDiv = TRUE)
+  
+  ## weighted mean of functional traits
+  mean_traits <- FD_group$CWM 
+  mean_traits <- mean_traits %>% 
+    as.data.frame() %>% 
+    rownames_to_column("transect") %>% 
+    mutate(group = names(group_list)[i]) 
+
+  mean_traits_groups <- rbind(mean_traits_groups, mean_traits)
+  # extract diversity values
+  birds_fr <- as.data.frame(FD_group$FRic)
+  birds_fe <- as.data.frame(FD_group$FEve)
+  birds_fd <- as.data.frame(FD_group$FDiv)
+
+  row.names(birds_fr)
+  birds_fr$transect <- rownames(birds_fr)
+  birds_fe$transect <- rownames(birds_fe)
+  birds_fd$transect <- rownames(birds_fd)
+
+  birds_functional_measures <- left_join(birds_fr, birds_fe,by = "transect")
+  birds_functional_measures <- left_join(birds_functional_measures, birds_fd, by = "transect")
+  head(birds_functional_measures)
+  birds_functional_measures <- birds_functional_measures %>% 
+    mutate(group = names(group_list)[i]) %>% 
+  dplyr::select(transect, group, everything())
+  
+  FD_groups <- rbind(FD_groups, birds_functional_measures)
+}
+
+mean_traits_groups
+FD_groups
+
+# write.csv(FD_groups, "./output/functional_measures_transects_groups.csv", row.names = FALSE)
+# write.csv(mean_traits_groups, "./output/functional_measures_transects_cwm_groups.csv", row.names = FALSE)
+# FD_groups <- read.csv("./output/functional_measures_transects_groups.csv")
+# mean_traits_groups <- read.csv("./output/functional_measures_transects_cwm_groups.csv")
+```
+
+
+### summaries
+```{r}
+FD_groups %>% 
+  group_by(group) %>% 
+  summarise(across(where(is.numeric), list(mean = mean, sd = sd, min = min, max = max)))
+```
+# A tibble: 3 × 13
+  group  `FD_group$FRic_mean` `FD_group$FRic_sd` `FD_group$FRic_min` `FD_group$FRic_max` `FD_group$FEve_mean`
+  <chr>                 <dbl>              <dbl>               <dbl>               <dbl>                <dbl>
+1 Group1                0.550              0.228             0.0140                1                    0.558
+2 Group2                0.447              0.316             0.0320                1                    0.620
+3 Group3                0.381              0.270             0.00261               0.893                0.710
+
+
+# Function to run PCoA and extract info
+
+```{r}
+source("./rscripts/source_functions.R")
+```
+
+
+## Group 1
+
+### prepare data
+```{r load data}
+## bird abund transect per group
+bird_abund_g1 <- bird_abund_g1 %>% 
+  as.data.frame() %>% 
+  rownames_to_column("transect") %>% 
+  arrange(transect) %>% 
+  column_to_rownames("transect")
+
+## get species in g1
+species_g1 <- traits_matrix %>% 
+  filter(group == "Group1") %>% 
+  dplyr::select(sp2)
+nrow(species_g1) # 10 sp
+
+## trait data transect
+mean_traits_g1 <- mean_traits_groups %>% 
+  filter(group == "Group1") %>% 
+  arrange(transect) %>% 
+  dplyr::select(-group, -nsites) %>% 
+  column_to_rownames("transect")
+
+## env covariates grid
+covariates_grid_g1 <- covariates_grid %>% 
+  filter(transect %in% rownames(bird_abund_g1)) %>% 
+  arrange(transect) %>% 
+  dplyr::select(-lat, -long) %>% 
+  column_to_rownames("transect") 
+
+## env covariates territory
+## filtered to species for the group
+covariates_terr_g1 <- covariates_terr %>% 
+  filter(transect %in% rownames(bird_abund_g1)) %>% 
+  filter(sp_name %in% species_g1$sp2) %>% 
+  dplyr::select(-nvisits) %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  column_to_rownames("transect") %>%  
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean$", "", .)))
+
+## env covariates points
+## filtered to species for the group
+covariates_pts_g1 <- covariates_points %>% 
+  filter(transect %in% rownames(bird_abund_g1)) %>% 
+  filter(sp_name %in% species_g1$sp2) %>% 
+  dplyr::select(-visit) %>% 
+  group_by(unique_ter_id, transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  ungroup() %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  column_to_rownames("transect") %>%  
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean_mean$", "", .)))  
+  
+```
+
+
+### grid scale
+```{r}
+pcoa_grid_g1 <- mypcoa_toplot(species_matrix = bird_abund_g1, 
+                      env_matrix = covariates_grid_g1, 
+                      traits_matrix = mean_traits_g1)
+
+plot_grid_g1 <- ggplotting_pcoa(site_scores = pcoa_grid_g1$site_scores,
+                                env_coord_cont = pcoa_grid_g1$env_coord_cont, 
+                                traits_coord_cat = pcoa_grid_g1$traits_coord_cat,
+                                traits_coord_cont = pcoa_grid_g1$traits_coord_cont,
+                                myxlim = c(-1.2, 1.2), myylim = c(-1.2, 1),
+                                mytitle = "PCoA Grid Scale - Group 1")
+plot_grid_g1
+# ggsave(plot = plot_grid_g1,
+#        filename = "./plots/groups/PCoA_grid_scale_g1.png",
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(plot_grid_g1, "./output/PCoAplot_grid_group1.rds")
+```
+
+### territory centroid scale
+```{r}
+pcoa_terr_g1 <- mypcoa_toplot(species_matrix = bird_abund_g1, 
+                      env_matrix = covariates_terr_g1, 
+                      traits_matrix = mean_traits_g1)
+
+plot_terr_g1 <- ggplotting_pcoa(site_scores = pcoa_terr_g1$site_scores,
+                                env_coord_cont = pcoa_terr_g1$env_coord_cont, 
+                                traits_coord_cat = pcoa_terr_g1$traits_coord_cat,
+                                traits_coord_cont = pcoa_terr_g1$traits_coord_cont,
+                                myxlim = c(-1.2, 1.2), myylim = c(-1.2, 1),
+                                mytitle = "PCoA Territory Centroid Scale - Group 1")
+plot_terr_g1
+# ggsave(plot = plot_terr_g1, 
+#        filename = "./plots/groups/PCoA_terr_scale_g1.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(plot_terr_g1, "./output/PCoAplot_terr_group1.rds")
+```
+
+### point location scale
+```{r}
+pcoa_pts_g1 <- mypcoa_toplot(species_matrix = bird_abund_g1, 
+                      env_matrix = covariates_pts_g1, 
+                      traits_matrix = mean_traits_g1)
+
+plot_pts_g1 <- ggplotting_pcoa(site_scores = pcoa_pts_g1$site_scores,
+                               env_coord_cont = pcoa_pts_g1$env_coord_cont, 
+                               traits_coord_cat = pcoa_pts_g1$traits_coord_cat,
+                               traits_coord_cont = pcoa_pts_g1$traits_coord_cont,
+                                myxlim = c(-1.2, 1.2), myylim = c(-1.2, 1),
+                               mytitle = "PCoA Point Scale - Group 1")
+plot_pts_g1
+# ggsave(plot = plot_pts_g1, 
+#        filename = "./plots/groups/PCoA_point_scale_g1.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(plot_pts_g1, "./output/PCoAplot_pts_group1.rds")
+```
+
+
+## Group 2
+
+### prepare data
+```{r load data}
+## bird abund transect per group
+bird_abund_g2 <- bird_abund_g2 %>% 
+  as.data.frame() %>% 
+  rownames_to_column("transect") %>% 
+  arrange(transect) %>% 
+  column_to_rownames("transect")
+
+## get species in g2
+species_g2 <- traits_matrix %>% 
+  filter(group == "Group2") %>% 
+  dplyr::select(sp2)
+nrow(species_g2) # 12 sp
+
+## trait data transect
+mean_traits_g2 <- mean_traits_groups %>% 
+  filter(group == "Group1") %>% 
+  arrange(transect) %>% 
+  dplyr::select(-group, -nsites) %>% 
+  column_to_rownames("transect")
+
+## env covariates grid
+covariates_grid_g2 <- covariates_grid %>% 
+  filter(transect %in% rownames(bird_abund_g2)) %>% 
+  arrange(transect) %>% 
+  dplyr::select(-lat, -long) %>% 
+  column_to_rownames("transect") 
+
+## env covariates territory
+# sum(unique(covariates_terr$sp_name) %in% species_g2$sp2)
+
+covariates_terr_g2 <- covariates_terr %>% 
+  filter(transect %in% rownames(bird_abund_g2)) %>% 
+  filter(sp_name %in% species_g2$sp2) %>% 
+  dplyr::select(-nvisits) %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  column_to_rownames("transect") %>%  
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean$", "", .)))
+
+## env covariates points
+covariates_pts_g2 <- covariates_points %>% 
+  filter(transect %in% rownames(bird_abund_g2)) %>% 
+  filter(sp_name %in% species_g2$sp2) %>% 
+  dplyr::select(-visit) %>% 
+  group_by(unique_ter_id, transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  ungroup() %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  column_to_rownames("transect") %>%  
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean_mean$", "", .)))
+```
+
+
+### grid scale
+```{r}
+pcoa_grid_g2 <- mypcoa_toplot(species_matrix = bird_abund_g2, 
+                      env_matrix = covariates_grid_g2, 
+                      traits_matrix = mean_traits_g2)
+
+plot_grid_g2 <- ggplotting_pcoa(site_scores = pcoa_grid_g2$site_scores,
+                                env_coord_cont = pcoa_grid_g2$env_coord_cont, 
+                                traits_coord_cat = pcoa_grid_g2$traits_coord_cat,
+                                traits_coord_cont = pcoa_grid_g2$traits_coord_cont,
+                                myxlim = c(-1.2, 1.2), myylim = c(-1.2, 1),
+                                mytitle = "PCoA Grid Scale - Group 2")
+plot_grid_g2
+# ggsave(plot = plot_grid_g2, 
+#        filename = "./plots/groups/PCoA_grid_scale_g2.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(plot_grid_g2, "./output/PCoAplot_grid_group2.rds")
+```
+
+### territory centroid scale
+```{r}
+pcoa_terr_g2 <- mypcoa_toplot(species_matrix = bird_abund_g2, 
+                      env_matrix = covariates_terr_g2, 
+                      traits_matrix = mean_traits_g2)
+
+plot_terr_g2 <- ggplotting_pcoa(site_scores = pcoa_terr_g2$site_scores,
+                                env_coord_cont = pcoa_terr_g2$env_coord_cont, 
+                                traits_coord_cat = pcoa_terr_g2$traits_coord_cat,
+                                traits_coord_cont = pcoa_terr_g2$traits_coord_cont,
+                                myxlim = c(-1.2, 1.2), myylim = c(-1.2, 1),
+                                mytitle = "PCoA Territory Centroid Scale - Group 2")
+plot_terr_g2
+# ggsave(plot = plot_terr_g2, 
+#        filename = "./plots/groups/PCoA_terr_scale_g2.png", 
+#        dpi = 900, height = 8, width = 8)
+
+# saveRDS(plot_terr_g2, "./output/PCoAplot_terr_group2.rds")
+```
+
+### point location scale
+```{r}
+pcoa_pts_g2 <- mypcoa_toplot(species_matrix = bird_abund_g2, 
+                      env_matrix = covariates_pts_g2, 
+                      traits_matrix = mean_traits_g2)
+
+plot_pts_g2 <- ggplotting_pcoa(site_scores = pcoa_pts_g2$site_scores,
+                                env_coord_cont = pcoa_pts_g2$env_coord_cont, 
+                                traits_coord_cat = pcoa_pts_g2$traits_coord_cat,
+                                traits_coord_cont = pcoa_pts_g2$traits_coord_cont,
+                               myxlim = c(-1.2, 1.2), myylim = c(-1.2, 1),
+                               mytitle = "PCoA Point Scale - Group 2")
+plot_pts_g2
+# ggsave(plot = plot_pts_g2, 
+#        filename = "./plots/groups/PCoA_point_scale_g2.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(plot_pts_g2, "./output/PCoAplot_pts_group2.rds")
+```
+
+
+## Group 3
+
+### prepare data
+```{r load data}
+## bird abund transect per group
+bird_abund_g3 <- bird_abund_g3 %>% 
+  as.data.frame() %>% 
+  rownames_to_column("transect") %>% 
+  arrange(transect) %>% 
+  column_to_rownames("transect")
+
+## get species in g2
+species_g3 <- traits_matrix %>% 
+  filter(group == "Group3") %>% 
+  dplyr::select(sp2)
+nrow(species_g3) # 42 sp
+
+## trait data transect
+mean_traits_g3 <- mean_traits_groups %>% 
+  filter(group == "Group1") %>% 
+  arrange(transect) %>% 
+  dplyr::select(-group, -nsites) %>% 
+  column_to_rownames("transect")
+
+## env covariates grid
+covariates_grid_g3 <- covariates_grid %>% 
+  filter(transect %in% rownames(bird_abund_g3)) %>% 
+  arrange(transect) %>% 
+  dplyr::select(-lat, -long) %>% 
+  column_to_rownames("transect") 
+
+## env covariates territory
+ # sum(unique(covariates_terr$sp_name) %in% species_g3$sp2)
+covariates_terr_g3 <- covariates_terr %>% 
+  filter(transect %in% rownames(bird_abund_g3)) %>% 
+  filter(sp_name %in% species_g2$sp2) %>% 
+  dplyr::select(-nvisits) %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  column_to_rownames("transect") %>%  
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean$", "", .)))
+
+## env covariates points
+covariates_pts_g3 <- covariates_points %>% 
+  filter(transect %in% rownames(bird_abund_g3)) %>% 
+  filter(sp_name %in% species_g2$sp2) %>% 
+  dplyr::select(-visit) %>% 
+  group_by(unique_ter_id, transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  ungroup() %>% 
+  group_by(transect) %>% 
+  summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE)))) %>% 
+  arrange(transect) %>% 
+  column_to_rownames("transect") %>%  
+  ungroup() %>% 
+  rename_at(.vars = vars(ends_with("_mean")),
+            .funs = list(~sub("_mean_mean$", "", .)))
+```
+
+
+### grid scale
+```{r}
+pcoa_grid_g3 <- mypcoa_toplot(species_matrix = bird_abund_g3, 
+                      env_matrix = covariates_grid_g3, 
+                      traits_matrix = mean_traits_g3)
+
+plot_grid_g3 <- ggplotting_pcoa(site_scores = pcoa_grid_g3$site_scores,
+                                env_coord_cont = pcoa_grid_g3$env_coord_cont, 
+                                traits_coord_cat = pcoa_grid_g3$traits_coord_cat,
+                                traits_coord_cont = pcoa_grid_g3$traits_coord_cont,
+                                myxlim = c(-1.2, 1.2), myylim = c(-1.2, 1),
+                                mytitle = "PCoA Grid Scale - Group 3")
+plot_grid_g3
+# ggsave(plot = plot_grid_g3, 
+#        filename = "./plots/groups/PCoA_grid_scale_g3.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(plot_grid_g3, "./output/PCoAplot_grid_group3.rds")
+```
+
+### territory centroid scale
+```{r}
+pcoa_terr_g3 <- mypcoa_toplot(species_matrix = bird_abund_g3, 
+                      env_matrix = covariates_terr_g3, 
+                      traits_matrix = mean_traits_g3)
+
+plot_terr_g3 <- ggplotting_pcoa(site_scores = pcoa_terr_g3$site_scores,
+                                env_coord_cont = pcoa_terr_g3$env_coord_cont, 
+                                traits_coord_cat = pcoa_terr_g3$traits_coord_cat,
+                                traits_coord_cont = pcoa_terr_g3$traits_coord_cont,
+                                myxlim = c(-1.2, 1.2), myylim = c(-1.2, 1),
+                                mytitle = "PCoA Territory Centroid Scale - Group 3")
+plot_terr_g3
+# ggsave(plot = plot_terr_g3, 
+#        filename = "./plots/groups/PCoA_terr_scale_g3.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(plot_terr_g3, "./output/PCoAplot_terr_group3.rds")
+```
+
+### point location scale
+```{r}
+pcoa_pts_g3 <- mypcoa_toplot(species_matrix = bird_abund_g3, 
+                      env_matrix = covariates_pts_g3, 
+                      traits_matrix = mean_traits_g3)
+
+plot_pts_g3 <- ggplotting_pcoa(site_scores = pcoa_pts_g3$site_scores,
+                                env_coord_cont = pcoa_pts_g3$env_coord_cont, 
+                                traits_coord_cat = pcoa_pts_g3$traits_coord_cat,
+                                traits_coord_cont = pcoa_pts_g3$traits_coord_cont,
+                                myxlim = c(-1.2, 1.2), myylim = c(-1.2, 1),
+                                mytitle = "PCoA Point Scale - Group 3")
+plot_pts_g3
+# ggsave(plot = plot_pts_g3, 
+#        filename = "./plots/groups/PCoA_point_scale_g3.png", 
+#        dpi = 900, height = 8, width = 8)
+# saveRDS(plot_pts_g3, "./output/PCoAplot_pts_group3.rds")
+```
+
+
+
+# Put all plots together
+Including the ones with all the birds
+
+!!This works only on the same computer that the plots were saved
+
+```{r load data, echo = FALSE}
+library(patchwork)
+
+myplot_grid <- readRDS("./output/PCoAplot_grid_allbirds.rds")
+myplot_terr <- readRDS("./output/PCoAplot_terr_allbirds.rds")
+myplot_pts <- readRDS("./output/PCoAplot_pts_allbirds.rds")
+
+group1_grid <- readRDS("./output/PCoAplot_grid_group1.rds")
+group1_terr <- readRDS("./output/PCoAplot_terr_group1.rds")
+group1_pts <- readRDS("./output/PCoAplot_pts_group1.rds")
+
+group2_grid <- readRDS("./output/PCoAplot_grid_group2.rds")
+group2_terr <- readRDS("./output/PCoAplot_terr_group2.rds")
+group2_pts <- readRDS("./output/PCoAplot_pts_group2.rds")
+
+group3_grid <- readRDS("./output/PCoAplot_grid_group3.rds")
+group3_terr <- readRDS("./output/PCoAplot_terr_group3.rds")
+group3_pts <- readRDS("./output/PCoAplot_pts_group3.rds")
+```
+
+```{r prepare plots}
+## get plots without titles
+plot_grid <- myplot_grid + ggtitle(NULL) +
+  labs(tag = "A") +
+  # xlab("MDS1") +
+  # ylab("MDS2") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.16, 0.95))
+
+plot_terr <- myplot_terr + ggtitle(NULL) +
+  labs(tag = "B") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+plot_pts <- myplot_pts + ggtitle(NULL) +
+  labs(tag = "C") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+
+plot_g1_grid <- group1_grid + ggtitle(NULL) +
+  labs(tag = "D") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.16, 0.95))
+
+plot_g1_terr <- group1_terr + ggtitle(NULL) +
+  labs(tag = "E") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+plot_g1_pts <- group1_pts + ggtitle(NULL) +
+  labs(tag = "F") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+
+plot_g2_grid <- group2_grid + ggtitle(NULL) +
+  labs(tag = "G") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.16, 0.95))
+
+plot_g2_terr <- group2_terr + ggtitle(NULL) +
+  labs(tag = "H") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+plot_g2_pts <- group2_pts + ggtitle(NULL) +
+  labs(tag = "I") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+
+plot_g3_grid <- group3_grid + ggtitle(NULL) +
+  labs(tag = "J") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.16, 0.95))
+
+plot_g3_terr <- group3_terr + ggtitle(NULL) +
+  labs(tag = "K") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+plot_g3_pts <- group3_pts + ggtitle(NULL) +
+  labs(tag = "L") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+
+## get row names
+col1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Grid Scale", size = 8) + theme_void() 
+col2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Territory Scale", size = 8) + theme_void() 
+col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", , size = 8) + theme_void() 
+row1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="All birds", angle = 90, , size = 8) + theme_void() 
+row2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Exploiters", angle = 90, , size = 8) + theme_void() 
+row3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Dwellers", angle = 90, , size = 8) + theme_void() 
+row4 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Avoiders", angle = 90, , size = 8) + theme_void()
+```
+
+
+```{r prepare plot layout}
+## define layout 
+layoutplot <- "
+#aaabbbccc
+dhhhiiijjj
+dhhhiiijjj
+elllmmmooo
+elllmmmooo
+fpppqqqrrr
+fpppqqqrrr
+gssstttvvv
+gssstttvvv
+"
+
+plotlist <- list(a = col1, b = col2, c = col3,
+                 d = row1, e = row2, f = row3, g = row4, 
+                 h = plot_grid, i = plot_terr, j = plot_pts,
+                 l = plot_g1_grid, m = plot_g1_terr, o = plot_g1_pts, 
+                 p = plot_g2_grid, q = plot_g2_terr, r = plot_g2_pts,
+                 s = plot_g3_grid, t = plot_g3_terr, v = plot_g3_pts)
+
+wrap_plots(plotlist, guides = 'collect', design = layoutplot) +
+  plot_layout(axis_titles = "collect", heights = c(1, 0.1 , 3, 0.1, 3, 0.1, 3, 0.1, 3, 0.1)) 
+  # plot_annotation(tag_levels = 'A') 
+  
+ggsave(filename = "./plots/PCoA_allplots_allgroups.png", 
+        dpi = 900, height = 22, width = 16)
+```
+
+
+## plot only the groups and grid - point scale
+
+```{r prepare plots}
+## get plots without titles
+plot_g1_grid <- group1_grid + ggtitle(NULL) +
+  labs(tag = "A") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.16, 0.95))
+
+plot_g2_grid <- group2_grid + ggtitle(NULL) +
+  labs(tag = "B") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+plot_g3_grid <- group3_grid + ggtitle(NULL) +
+  labs(tag = "C") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+plot_g1_pts <- group1_pts + ggtitle(NULL) +
+  labs(tag = "D") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.16, 0.95))
+
+plot_g2_pts <- group2_pts + ggtitle(NULL) +
+  labs(tag = "E") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+plot_g3_pts <- group3_pts + ggtitle(NULL) +
+  labs(tag = "F") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+
+## get row names
+col1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Grid Scale", angle = 90, size = 8) + theme_void() 
+col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", angle = 90, size = 8) + theme_void() 
+row2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Exploiters", size = 8) + theme_void() 
+row3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Dwellers", size = 8) + theme_void() 
+row4 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Avoiders", size = 8) + theme_void()
+```
+
+
+
+```{r prepare plot layout}
+## define layout 
+layoutplot <- "
+#eeefffggg
+alllpppsss
+alllpppsss
+cooorrryyy
+cooorrryyy
+"
+
+plotlist <- list(a = col1, c = col3,
+                 e = row2, f = row3, g = row4, 
+                 l = plot_g1_grid, o = plot_g1_pts, 
+                 p = plot_g2_grid, r = plot_g2_pts,
+                 s = plot_g3_grid, v = plot_g3_pts)
+
+wrap_plots(plotlist, guides = 'collect', design = layoutplot) +
+  plot_layout(axis_titles = "collect", heights = c(1, 0.1 , 3, 0.1, 3, 0.1, 3, 0.1)) 
+  # plot_annotation(tag_levels = 'A') 
+  
+ggsave(filename = "./plots/PCoA_2scales_groups.png", 
+        dpi = 900, height = 10, width = 16)
+```
+
+
+
+## plot territory scale
+
+```{r prepare plots}
+## get plots without titles
+plot_terr <- myplot_terr + ggtitle(NULL) +
+  labs(tag = "A") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.15, 0.95))
+
+plot_g1_terr <- group1_terr + ggtitle(NULL) +
+  labs(tag = "B") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+
+plot_g2_terr <- group2_terr + ggtitle(NULL) +
+  labs(tag = "C") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.15, 0.95))
+
+plot_g3_terr <- group3_terr + ggtitle(NULL) +
+  labs(tag = "D") +
+  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
+    plot.tag.position = c(0.12, 0.95))
+```
+
+
+```{r prepare plot layout}
+## define layout 
+layoutplot <- "
+iiimmm
+iiimmm
+qqqttt
+qqqttt
+"
+
+plotlist <- list(i = plot_terr, m = plot_g1_terr, 
+                 q = plot_g2_terr, t = plot_g3_terr)
+
+wrap_plots(plotlist, guides = 'collect', design = layoutplot) +
+  plot_layout(axis_titles = "collect", heights = c(1, 1, 1, 1)) 
+  # plot_annotation(tag_levels = 'A') 
+  
+ggsave(filename = "./plots/PCoA_terrplots_allgroups.png", 
+        dpi = 900, height = 12, width = 12)
+```
