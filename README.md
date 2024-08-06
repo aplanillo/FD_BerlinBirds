@@ -12,7 +12,7 @@ Contains the data necessary for the analyses:
 - _species_groups_responses_: classification of the species into the functional groups.
 - _grids_environmental_variables_: environmental data extracted at monitoring grid scale (1x1km).
 - _territories_environmental_variables_: environmental data extracted at the centroid of the bird territory scale (100x100m).
-- _territories_points_environmental_variables_: environmental data extracted at the exact location of the birds (10x10m).
+- _locations_environmental_variables_20m_: environmental data extracted at the exact location of the birds (10x10m).
 
 Folder <code> rscripts </code>:
 
