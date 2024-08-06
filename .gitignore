@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+rscripts/preparation
 rscripts/_old
 output/
 plots/Plot_correlation_urban_variables_grid.png
