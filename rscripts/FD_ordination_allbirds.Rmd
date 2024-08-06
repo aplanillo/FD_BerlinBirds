@@ -73,11 +73,9 @@ FD_birds <- FD::dbFD(x = traits_matrix, a = bird_matrix2,
 
 FD_birds
 # saveRDS(FD_birds, "./output/fd_birds.rds")
-# FD_birds <- readRDS("./output/fd_birds.rds")
 
 ## weighted mean of functional traits
 FD_birds$CWM
-
 
 mean_traits_transect <- FD_birds$CWM
 summary(mean_traits_transect)
@@ -105,7 +103,6 @@ birds_functional_measures <- birds_functional_measures %>%
   dplyr::select(transect, everything())
 
 # write.csv(birds_functional_measures, "./output/functional_measures_transects.csv", row.names = FALSE)
-# birds_functional_measures <- read.csv("./output/functional_measures_transects.csv")
 ```
 
 
@@ -256,11 +253,9 @@ traits_coord_cont
 # ggsave(plot = myplot_grid, 
 #        filename = "./plots/PCoA_grid_scale.png", 
 #        dpi = 900, height = 8, width = 8)
-# saveRDS(myplot_grid, "./output/PCoAplot_grid_allbirds.rds")
 ```
 
 # 2.2 PCoA territory scale
-
 
 ### prepare data for territory scale 
 ```{r}
@@ -372,7 +367,6 @@ traits_coord_cont_terr
 # ggsave(plot = myplot_terr, 
 #        filename = "./plots/PCoA_territory_scale.png", 
 #        dpi = 900, height = 8, width = 8)
-# saveRDS(myplot_terr, "./output/PCoAplot_terr_allbirds.rds")
 ```
 
 
@@ -491,19 +485,10 @@ traits_coord_cont
 # ggsave(plot = myplot_pts, 
 #        filename = "./plots/PCoA_points_scale.png", 
 #        dpi = 900, height = 8, width = 8)
-# saveRDS(myplot_pts, "./output/PCoAplot_pts_allbirds.rds")
 ```
 
 
 ## Put all plots together
-```{r load data}
-library(patchwork)
-
-myplot_grid <- readRDS("./output/PCoAplot_grid_allbirds.rds")
-myplot_terr <- readRDS("./output/PCoAplot_terr_allbirds.rds")
-myplot_pts <- readRDS("./output/PCoAplot_pts_allbirds.rds")
-```
-
 
 ```{r prepare plot layout}
 ## get plots without titles
@@ -532,8 +517,8 @@ plot_pts <- myplot_pts + ggtitle(NULL) +
 ## get row names
 col1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Grid Scale", size = 8) + theme_void() 
 col2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Territory Scale", size = 8) + theme_void() 
-col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", , size = 8) + theme_void() 
-row1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="All birds", angle = 90, , size = 8) + theme_void() 
+col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", size = 8) + theme_void() 
+row1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="All birds", angle = 90, size = 8) + theme_void() 
 
 ## define layout 
 layoutplot <- "
@@ -576,7 +561,7 @@ plot_pts <- myplot_pts + ggtitle(NULL) +
 
 ## get row names
 col1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Grid Scale", size = 8) + theme_void() 
-col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", , size = 8) + theme_void() 
+col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", size = 8) + theme_void() 
 
 ## define layout 
 layoutplot <- "

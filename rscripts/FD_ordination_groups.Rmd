@@ -191,8 +191,6 @@ FD_groups
 
 # write.csv(FD_groups, "./output/functional_measures_transects_groups.csv", row.names = FALSE)
 # write.csv(mean_traits_groups, "./output/functional_measures_transects_cwm_groups.csv", row.names = FALSE)
-# FD_groups <- read.csv("./output/functional_measures_transects_groups.csv")
-# mean_traits_groups <- read.csv("./output/functional_measures_transects_cwm_groups.csv")
 ```
 
 
@@ -372,7 +370,6 @@ covariates_grid_g2 <- covariates_grid %>%
   column_to_rownames("transect") 
 
 ## env covariates territory
-# sum(unique(covariates_terr$sp_name) %in% species_g2$sp2)
 
 covariates_terr_g2 <- covariates_terr %>% 
   filter(transect %in% rownames(bird_abund_g2)) %>% 
@@ -591,7 +588,7 @@ Including the ones with all the birds
 !!This works only on the same computer that the plots were saved
 
 ```{r load data, echo = FALSE}
-library(patchwork)
+#library(patchwork)
 
 myplot_grid <- readRDS("./output/PCoAplot_grid_allbirds.rds")
 myplot_terr <- readRDS("./output/PCoAplot_terr_allbirds.rds")
@@ -681,11 +678,11 @@ plot_g3_pts <- group3_pts + ggtitle(NULL) +
 ## get row names
 col1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Grid Scale", size = 8) + theme_void() 
 col2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Territory Scale", size = 8) + theme_void() 
-col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", , size = 8) + theme_void() 
-row1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="All birds", angle = 90, , size = 8) + theme_void() 
-row2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Exploiters", angle = 90, , size = 8) + theme_void() 
-row3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Dwellers", angle = 90, , size = 8) + theme_void() 
-row4 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Avoiders", angle = 90, , size = 8) + theme_void()
+col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", size = 8) + theme_void() 
+row1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="All birds", angle = 90, size = 8) + theme_void() 
+row2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Exploiters", angle = 90, size = 8) + theme_void() 
+row3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Dwellers", angle = 90, size = 8) + theme_void() 
+row4 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Avoiders", angle = 90, size = 8) + theme_void()
 ```
 
 
