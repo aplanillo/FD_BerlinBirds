@@ -253,6 +253,7 @@ traits_coord_cont
 # ggsave(plot = myplot_grid, 
 #        filename = "./plots/PCoA_grid_scale.png", 
 #        dpi = 900, height = 8, width = 8)
+# saveRDS(myplot_grid, "./output/PCoAplot_grid_allbirds.rds")
 ```
 
 # 2.2 PCoA territory scale
@@ -367,6 +368,7 @@ traits_coord_cont_terr
 # ggsave(plot = myplot_terr, 
 #        filename = "./plots/PCoA_territory_scale.png", 
 #        dpi = 900, height = 8, width = 8)
+# saveRDS(myplot_terr, "./output/PCoAplot_terr_allbirds.rds")
 ```
 
 
@@ -485,6 +487,7 @@ traits_coord_cont
 # ggsave(plot = myplot_pts, 
 #        filename = "./plots/PCoA_points_scale.png", 
 #        dpi = 900, height = 8, width = 8)
+# saveRDS(myplot_pts, "./output/PCoAplot_pts_allbirds.rds")
 ```
 
 
@@ -535,12 +538,12 @@ wrap_plots(plotlist, guides = 'collect', design = layoutplot) +
   plot_layout(axis_titles = "collect", heights = c(1, 0.5 , 3)) 
   # plot_annotation(tag_levels = 'A') 
   
-ggsave(filename = "./plots/PCoA_allplots_allbirds.png", 
-        dpi = 900, height = 6, width = 16)
+# ggsave(filename = "./plots/PCoA_allplots_allbirds.png", 
+#         dpi = 900, height = 6, width = 16)
 ```
 
 
-## Plot grid + point scale
+## EXAMPLE: Plot grid + point scale
 
 ```{r prepare grid point layout}
 ## get plots without titles
