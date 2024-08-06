@@ -436,7 +436,6 @@ plot_terr_g2
 # ggsave(plot = plot_terr_g2, 
 #        filename = "./plots/groups/PCoA_terr_scale_g2.png", 
 #        dpi = 900, height = 8, width = 8)
-
 # saveRDS(plot_terr_g2, "./output/PCoAplot_terr_group2.rds")
 ```
 
@@ -681,7 +680,7 @@ col2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Territory Scale", si
 col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", size = 8) + theme_void() 
 row1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="All birds", angle = 90, size = 8) + theme_void() 
 row2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Exploiters", angle = 90, size = 8) + theme_void() 
-row3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Dwellers", angle = 90, size = 8) + theme_void() 
+row3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Adapters", angle = 90, size = 8) + theme_void() 
 row4 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Avoiders", angle = 90, size = 8) + theme_void()
 ```
 
@@ -711,124 +710,8 @@ wrap_plots(plotlist, guides = 'collect', design = layoutplot) +
   plot_layout(axis_titles = "collect", heights = c(1, 0.1 , 3, 0.1, 3, 0.1, 3, 0.1, 3, 0.1)) 
   # plot_annotation(tag_levels = 'A') 
   
-ggsave(filename = "./plots/PCoA_allplots_allgroups.png", 
-        dpi = 900, height = 22, width = 16)
+# ggsave(filename = "./plots/PCoA_allplots_allgroups.png", 
+#         dpi = 600, height = 20, width = 15)
 ```
 
 
-## plot only the groups and grid - point scale
-
-```{r prepare plots}
-## get plots without titles
-plot_g1_grid <- group1_grid + ggtitle(NULL) +
-  labs(tag = "A") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.16, 0.95))
-
-plot_g2_grid <- group2_grid + ggtitle(NULL) +
-  labs(tag = "B") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.12, 0.95))
-
-plot_g3_grid <- group3_grid + ggtitle(NULL) +
-  labs(tag = "C") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.12, 0.95))
-
-plot_g1_pts <- group1_pts + ggtitle(NULL) +
-  labs(tag = "D") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.16, 0.95))
-
-plot_g2_pts <- group2_pts + ggtitle(NULL) +
-  labs(tag = "E") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.12, 0.95))
-
-plot_g3_pts <- group3_pts + ggtitle(NULL) +
-  labs(tag = "F") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.12, 0.95))
-
-
-## get row names
-col1 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Grid Scale", angle = 90, size = 8) + theme_void() 
-col3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Point Scale", angle = 90, size = 8) + theme_void() 
-row2 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Exploiters", size = 8) + theme_void() 
-row3 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Dwellers", size = 8) + theme_void() 
-row4 <- ggplot() + annotate(geom = 'text', x=1, y=1, label="Avoiders", size = 8) + theme_void()
-```
-
-
-
-```{r prepare plot layout}
-## define layout 
-layoutplot <- "
-#eeefffggg
-alllpppsss
-alllpppsss
-cooorrryyy
-cooorrryyy
-"
-
-plotlist <- list(a = col1, c = col3,
-                 e = row2, f = row3, g = row4, 
-                 l = plot_g1_grid, o = plot_g1_pts, 
-                 p = plot_g2_grid, r = plot_g2_pts,
-                 s = plot_g3_grid, v = plot_g3_pts)
-
-wrap_plots(plotlist, guides = 'collect', design = layoutplot) +
-  plot_layout(axis_titles = "collect", heights = c(1, 0.1 , 3, 0.1, 3, 0.1, 3, 0.1)) 
-  # plot_annotation(tag_levels = 'A') 
-  
-ggsave(filename = "./plots/PCoA_2scales_groups.png", 
-        dpi = 900, height = 10, width = 16)
-```
-
-
-
-## plot territory scale
-
-```{r prepare plots}
-## get plots without titles
-plot_terr <- myplot_terr + ggtitle(NULL) +
-  labs(tag = "A") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.15, 0.95))
-
-plot_g1_terr <- group1_terr + ggtitle(NULL) +
-  labs(tag = "B") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.12, 0.95))
-
-plot_g2_terr <- group2_terr + ggtitle(NULL) +
-  labs(tag = "C") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.15, 0.95))
-
-plot_g3_terr <- group3_terr + ggtitle(NULL) +
-  labs(tag = "D") +
-  theme(plot.tag = element_text(hjust = 0, size = 14, vjust = 0, face = "bold"),
-    plot.tag.position = c(0.12, 0.95))
-```
-
-
-```{r prepare plot layout}
-## define layout 
-layoutplot <- "
-iiimmm
-iiimmm
-qqqttt
-qqqttt
-"
-
-plotlist <- list(i = plot_terr, m = plot_g1_terr, 
-                 q = plot_g2_terr, t = plot_g3_terr)
-
-wrap_plots(plotlist, guides = 'collect', design = layoutplot) +
-  plot_layout(axis_titles = "collect", heights = c(1, 1, 1, 1)) 
-  # plot_annotation(tag_levels = 'A') 
-  
-ggsave(filename = "./plots/PCoA_terrplots_allgroups.png", 
-        dpi = 900, height = 12, width = 12)
-```
